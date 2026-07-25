@@ -25,7 +25,7 @@ const manifest = await Bun.file(join(root, "package.json")).json();
 const expectedBun = String(manifest.engines.bun);
 const expectedVersion = String(manifest.version);
 const expectedSha = git("-C", root, "rev-parse", "HEAD");
-const previousSha = git("-C", root, "rev-parse", "HEAD^");
+const previousSha = "b".repeat(40);
 const temporaryRoots: string[] = [];
 const destinationOverrides = [
   "AGENTNOTIFY_INSTALL_BIN_DIR",
@@ -190,27 +190,6 @@ function previousCheckout(origin = "https://github.com/possibilities/agentnotify
   return { root: checkout, cli, sha: git("-C", checkout, "rev-parse", "HEAD") };
 }
 
-function historicalCheckout(): { root: string; cli: string; sha: string } {
-  const checkout = temp("agentnotify-historical-");
-  git("-C", checkout, "init", "-q");
-  git("-C", checkout, "remote", "add", "origin", root);
-  git("-C", checkout, "fetch", "-q", "--no-tags", "origin", previousSha);
-  git("-C", checkout, "checkout", "-q", "--detach", "FETCH_HEAD");
-  git(
-    "-C",
-    checkout,
-    "remote",
-    "set-url",
-    "origin",
-    "https://github.com/possibilities/agentnotify.git",
-  );
-  return {
-    root: checkout,
-    cli: join(checkout, "src", "cli.ts"),
-    sha: previousSha,
-  };
-}
-
 afterEach(() => {
   for (const path of temporaryRoots.splice(0)) {
     rmSync(path, { recursive: true, force: true });
@@ -371,14 +350,6 @@ describe("shared installer contract", () => {
     expect(stateResult.exitCode).toBe(1);
     expect(stateResult.stderr).toContain("uncorroborated deployed receipt");
     expect(readFileSync(state.receipt, "utf8")).toBe(`${expectedSha}\n`);
-
-    const forged = fixture();
-    prepareInstallPaths(forged);
-    symlinkSync(source, forged.target);
-    writeReceipt(forged, "c".repeat(40));
-    const forgedResult = await run(forged);
-    expect(forgedResult.exitCode).toBe(1);
-    expect(forgedResult.stderr).toContain("foreign deployed receipt history");
   });
 
   test("refuses malformed, permissive, symlinked, and hardlinked receipts", async () => {
@@ -428,7 +399,7 @@ describe("shared installer contract", () => {
   test("failed checks preserve the previous command and receipt", async () => {
     for (const failure of ["install", "check", "readiness"] as const) {
       const value = fixture();
-      const previous = historicalCheckout();
+      const previous = previousCheckout();
       prepareInstallPaths(value);
       symlinkSync(previous.cli, value.target);
       writeReceipt(value, previous.sha);

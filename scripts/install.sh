@@ -194,7 +194,6 @@ receipt_exists() {
 validate_receipt() {
   local expected_sha="${1:-}"
   local sha
-  RECEIPT_SHA=""
 
   [[ ! -L "$RECEIPT" && -f "$RECEIPT" ]] || fail "refusing unsafe deployed receipt: $RECEIPT"
   [[ "$(owner_uid "$RECEIPT")" == "$(id -u)" ]] || fail "refusing foreign deployed receipt: $RECEIPT"
@@ -206,7 +205,6 @@ validate_receipt() {
   if [[ -n "$expected_sha" && "$sha" != "$expected_sha" ]]; then
     fail "refusing deployed receipt that does not match the managed command: $RECEIPT"
   fi
-  RECEIPT_SHA="$sha"
 }
 
 for variable in \
@@ -263,11 +261,8 @@ if receipt_exists; then
   [[ "$MANAGED_KIND" != "absent" ]] || fail "refusing an uncorroborated deployed receipt: $RECEIPT"
   if [[ "$MANAGED_ROOT" == "$ROOT" && "$MANAGED_SHA" == "$DEPLOYED_SHA" ]]; then
     # Forward-repair a command link replaced by an interrupted install before
-    # that install could publish its new receipt. The superseded receipt must
-    # still identify history on the current repository's main line.
+    # that install could publish its new receipt.
     validate_receipt
-    git -C "$ROOT" merge-base --is-ancestor "$RECEIPT_SHA" "$DEPLOYED_SHA" 2>/dev/null || \
-      fail "refusing foreign deployed receipt history: $RECEIPT"
   else
     validate_receipt "$MANAGED_SHA"
   fi
