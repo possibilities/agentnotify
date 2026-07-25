@@ -17,9 +17,12 @@ if [ ! -f "${source_cli}" ]; then
 fi
 
 umask 077
-bin_dir="${HOME}/.local/bin"
-data_dir="${HOME}/.local/share/agentnotify"
-state_dir="${HOME}/.local/state/agentnotify"
+local_dir="${HOME}/.local"
+bin_dir="${local_dir}/bin"
+share_dir="${local_dir}/share"
+data_dir="${share_dir}/agentnotify"
+state_parent="${local_dir}/state"
+state_dir="${state_parent}/agentnotify"
 link="${bin_dir}/agentnotify"
 temporary=""
 cleanup() {
@@ -27,7 +30,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for directory in "${bin_dir}" "${data_dir}" "${state_dir}"; do
+for directory in \
+  "${local_dir}" \
+  "${bin_dir}" \
+  "${share_dir}" \
+  "${data_dir}" \
+  "${state_parent}" \
+  "${state_dir}"
+do
   if [ -L "${directory}" ]; then
     echo "install-link: refusing symlinked directory ${directory}" >&2
     exit 1
