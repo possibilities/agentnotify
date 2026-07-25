@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname, resolve, sep } from "node:path";
+import { parseSince } from "./store.ts";
 
 export interface NotificationMessage {
   id: number;
@@ -89,8 +90,12 @@ function parseListOptions(url: URL): ListOptions | Response {
 
   const rawSince = url.searchParams.get("since");
   const since = rawSince?.trim() || undefined;
-  if (since && Number.isNaN(Date.parse(since))) {
-    return error(400, "since must be a valid date or timestamp");
+  if (since) {
+    try {
+      parseSince(since);
+    } catch {
+      return error(400, "since must be a relative m/h/d/w duration or ISO timestamp");
+    }
   }
 
   return { limit, search, since };
