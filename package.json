@@ -12,28 +12,20 @@
     "agentnotify": "src/cli.ts"
   },
   "scripts": {
-    "start": "bun run src/server.ts",
-    "dev": "vite",
-    "build": "vite build",
+    "start": "bun run src/cli.ts",
     "lint": "biome check .",
-    "format": "biome format --write src test scripts vite.config.ts",
+    "format": "biome format --write src test scripts",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "check": "bun run lint && bun run typecheck && bun run test"
   },
   "dependencies": {
     "node-notifier-cli": "^1.0.2",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
     "yaml": "^2.8.1"
   },
   "devDependencies": {
     "@biomejs/biome": "2.2.0",
     "@types/bun": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "@vitejs/plugin-react": "^4.4.1",
-    "typescript": "5.9.3",
-    "vite": "6.4.1"
+    "typescript": "5.9.3"
   }
 }
