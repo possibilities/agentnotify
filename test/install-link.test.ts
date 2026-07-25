@@ -62,12 +62,13 @@ describe("local CLI installation", () => {
     roots.push(home);
     const target = join(home, "foreign-state");
     mkdirSync(target, { recursive: true, mode: 0o755 });
+    const initialMode = lstatSync(target).mode & 0o777;
     const stateParent = join(home, ".local", "state");
     mkdirSync(stateParent, { recursive: true });
     symlinkSync(target, join(stateParent, "agentnotify"));
 
     const result = run(home);
     expect(result.exitCode).toBe(1);
-    expect(lstatSync(target).mode & 0o777).toBe(0o755);
+    expect(lstatSync(target).mode & 0o777).toBe(initialMode);
   });
 });
