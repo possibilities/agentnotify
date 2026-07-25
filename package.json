@@ -12,9 +12,9 @@
     "agentnotify": "src/cli.ts"
   },
   "scripts": {
-    "start": "bun run src/cli.ts",
-    "dev": "bun --watch src/cli.ts",
-    "build": "bun build src/cli.ts --outdir dist --target bun",
+    "start": "bun run src/server.ts",
+    "dev": "vite",
+    "build": "vite build",
     "lint": "biome check .",
     "format": "biome format --write src test scripts vite.config.ts",
     "typecheck": "tsc --noEmit",
