@@ -61,7 +61,7 @@ agentnotify list-messages --limit 20 --since 2h --search release
 ]
 ```
 
-`sound`, `group_id`, `open_url`, and `execute` are omitted when absent. `dismissed_at` is `null` until dismissal, then an ISO timestamp.
+`sound`, `group_id`, `open_url`, and `execute` are omitted when absent. `dismissed_at` is `null` until dismissal, then an ISO timestamp. Records imported from a schema without dismissal state are classified as dismissed at their recorded timestamp.
 
 ### Dismiss
 
@@ -85,7 +85,7 @@ agentnotify close-message --group release-42
 {"closed":"release-42"}
 ```
 
-Close asks the desktop delivery method to remove that group. It does not dismiss the history record.
+Close asks the desktop delivery method to remove that group. It does not dismiss the history record. Unsupported hosts or a missing macOS notifier make close a successful no-op; a notifier execution failure exits 1.
 
 Use `agentnotify --help`, `agentnotify <command> --help`, and `agentnotify --version` for concise command reference.
 

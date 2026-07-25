@@ -183,6 +183,8 @@ describe("agentnotify CLI", () => {
       ["show-message", "--title", "title"],
       ["list-messages", "--limit", "0"],
       ["list-messages", "--since", "1H"],
+      ["show-message", "--title", "title", "--message", "body", "--sound", "--no-phone"],
+      ["dismiss-message", "9007199254740993"],
       ["close-message", "--group=-remove"],
     ]) {
       const item = fixture();

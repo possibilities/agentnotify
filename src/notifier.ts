@@ -54,6 +54,8 @@ export async function sendDesktopNotification(
   }
 
   const fallback = [...dependencies.fallbackArgv, "-t", request.title, "-m", request.message];
+  if (request.sound) fallback.push("-s", request.sound);
+  if (request.openUrl) fallback.push("-o", request.openUrl);
   if (await runProcess(fallback, dependencies.spawn)) {
     return { success: true, method: "node-notifier" };
   }
@@ -71,5 +73,7 @@ export async function closeDesktopNotification(
   if (dependencies.platform !== "darwin") return;
   const terminalNotifier = dependencies.find("terminal-notifier");
   if (!terminalNotifier) return;
-  await runProcess([terminalNotifier, "-remove", group], dependencies.spawn);
+  if (!(await runProcess([terminalNotifier, "-remove", group], dependencies.spawn))) {
+    throw new Error("terminal-notifier failed to close the notification group");
+  }
 }

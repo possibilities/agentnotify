@@ -124,7 +124,9 @@ function parseOptions(
     const canonicalValue = valueOptions[name];
     if (canonicalValue) {
       const value = equals > 0 ? token.slice(equals + 1) : args[index + 1];
-      if (value === undefined) fail(`Option ${name} requires a value`);
+      if (value === undefined || (equals < 0 && value.startsWith("-"))) {
+        fail(`Option ${name} requires a value`);
+      }
       if (values.has(canonicalValue)) fail(`Option ${name} was provided more than once`);
       values.set(canonicalValue, value);
       if (equals < 0) index += 1;
@@ -257,8 +259,9 @@ function dismissMessage(args: readonly string[], deps: CliDependencies): void {
   const options = parseOptions(args, {});
   if (options.positional.length !== 1) fail("dismiss-message requires exactly one ID");
   const idValue = options.positional[0] ?? "";
-  if (!/^\d+$/.test(idValue) || Number(idValue) < 1) fail("ID must be a positive integer");
+  if (!/^\d+$/.test(idValue)) fail("ID must be a positive safe integer");
   const id = Number(idValue);
+  if (!Number.isSafeInteger(id) || id < 1) fail("ID must be a positive safe integer");
 
   const store = deps.openStore(logDatabasePath({ env: deps.env, home: deps.home }), {
     create: false,

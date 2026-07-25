@@ -56,7 +56,12 @@ describe("desktop notifier", () => {
   test("falls back to the pinned local CLI after an immediate failure", async () => {
     const { calls, dependencies } = fakes([7, 0]);
     const result = await sendDesktopNotification(
-      { title: "title", message: "message" },
+      {
+        title: "title",
+        message: "message",
+        sound: "Glass",
+        openUrl: "https://example.test/result",
+      },
       dependencies,
     );
     expect(result).toEqual({ success: true, method: "node-notifier" });
@@ -67,6 +72,10 @@ describe("desktop notifier", () => {
       "title",
       "-m",
       "message",
+      "-s",
+      "Glass",
+      "-o",
+      "https://example.test/result",
     ]);
   });
 
@@ -101,5 +110,10 @@ describe("desktop notifier", () => {
     missing.dependencies.find = () => null;
     await closeDesktopNotification("group one", missing.dependencies);
     expect(missing.calls).toEqual([]);
+
+    const failing = fakes([1]);
+    await expect(closeDesktopNotification("group one", failing.dependencies)).rejects.toThrow(
+      "failed to close",
+    );
   });
 });

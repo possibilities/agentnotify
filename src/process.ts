@@ -7,6 +7,7 @@ export const spawnProcess: SpawnProcess = (argv) => {
     stdin: "ignore",
     stdout: "ignore",
     stderr: "ignore",
+    timeout: 10_000,
   });
   return { exited: child.exited };
 };

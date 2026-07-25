@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MAX_LIST_LIMIT, MessageStore, parseSince } from "../src/store.ts";
@@ -40,6 +40,7 @@ describe("MessageStore", () => {
     expect(store.database.query("PRAGMA user_version").get()).toEqual({ user_version: 1 });
     expect(store.database.query("PRAGMA journal_mode").get()).toEqual({ journal_mode: "wal" });
     expect(store.database.query("PRAGMA synchronous").get()).toEqual({ synchronous: 1 });
+    expect(statSync(store.path).mode & 0o777).toBe(0o600);
     store.close();
   });
 
@@ -70,7 +71,7 @@ describe("MessageStore", () => {
     const store = new MessageStore(temporaryDatabase());
     const first = store.add({
       timestamp: "2025-01-01T00:00:00.000Z",
-      title: "Alpha title",
+      title: "Alpha 100% title",
       message: "first body",
       sound: "Ping",
       groupId: "group-one",
@@ -89,8 +90,13 @@ describe("MessageStore", () => {
       method: "fake",
     });
 
-    expect(store.list({ limit: 20 }).map((entry) => entry.title)).toEqual(["Beta", "Alpha title"]);
+    expect(store.list({ limit: 20 }).map((entry) => entry.title)).toEqual([
+      "Beta",
+      "Alpha 100% title",
+    ]);
     expect(store.list({ limit: 20, search: "Alpha" })).toHaveLength(2);
+    expect(store.list({ limit: 20, search: "%" })).toHaveLength(1);
+    expect(store.list({ limit: 20, search: "_" })).toHaveLength(0);
     expect(
       store.list({ limit: 20, since: "12h" }, new Date("2025-01-02T06:00:00.000Z")),
     ).toHaveLength(1);

@@ -27,6 +27,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
+for directory in "${bin_dir}" "${data_dir}" "${state_dir}"; do
+  if [ -L "${directory}" ]; then
+    echo "install-link: refusing symlinked directory ${directory}" >&2
+    exit 1
+  fi
+done
 mkdir -p "${bin_dir}" "${data_dir}" "${state_dir}"
 chmod 755 "${bin_dir}"
 chmod 700 "${data_dir}" "${state_dir}"

@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { logDatabasePath } from "./paths.ts";
 import type { ListOptions, MessageOutput, MessageRecord, NewMessage } from "./types.ts";
@@ -41,9 +41,10 @@ export class MessageStore {
   ) {
     const create = options.create ?? true;
     if (!create && !existsSync(path)) throw new Error(`No notification log found at ${path}`);
-    if (create) mkdirSync(dirname(path), { recursive: true });
+    if (create) mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 
     this.database = new Database(path, { create, strict: true });
+    if (create) chmodSync(path, 0o600);
     this.database.exec("PRAGMA busy_timeout = 5000");
     this.database.exec("PRAGMA journal_mode = WAL");
     this.database.exec("PRAGMA synchronous = NORMAL");
@@ -117,8 +118,9 @@ export class MessageStore {
       bindings.push(parseSince(options.since, now));
     }
     if (options.search) {
-      conditions.push("(title LIKE ? OR message LIKE ?)");
-      const query = `%${options.search}%`;
+      conditions.push("(title LIKE ? ESCAPE '\\' OR message LIKE ? ESCAPE '\\')");
+      const literal = options.search.replace(/[\\%_]/g, "\\$&");
+      const query = `%${literal}%`;
       bindings.push(query, query);
     }
 
