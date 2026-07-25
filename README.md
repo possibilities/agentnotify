@@ -4,7 +4,7 @@
 
 ## Install
 
-The installer requires the exact Bun version pinned in `package.json`. It installs the frozen dependency graph, runs the complete repository check, and atomically links the source executable at `~/.local/bin/agentnotify`.
+The zero-argument installer requires the exact Bun version pinned in `package.json`. It installs the frozen dependency graph, runs the complete repository check, and atomically links `~/.local/bin/agentnotify` to `src/cli.ts` in the exact Git checkout being deployed. Its final completion operation atomically publishes that checkout’s 40-character Git SHA to `~/.local/state/agentnotify/deployed-sha` with mode `0600`; every successful run replaces the receipt inode, including same-SHA reinstalls.
 
 ```sh
 git clone https://github.com/possibilities/agentnotify.git
@@ -12,7 +12,7 @@ cd agentnotify
 bash scripts/install.sh
 ```
 
-Add `~/.local/bin` to `PATH` if it is not already present. The installer is safe to rerun from any working directory. It refuses to replace a regular file at the executable path.
+Add `~/.local/bin` to `PATH` if it is not already present. The installer is safe to rerun from any working directory and can forward-repair an interruption after command publication but before receipt publication. It rejects foreign command or receipt state, hardlinked evidence, symlinked destination ancestors, unsafe directory permissions, foreign Git origins, and inherited destination overrides rather than adopting them. History and unrelated state are preserved.
 
 ## Commands and JSON contract
 
@@ -97,7 +97,7 @@ Notification history defaults to:
 ~/.local/share/agentnotify/log.db
 ```
 
-The installer creates `~/.local/share/agentnotify` and `~/.local/state/agentnotify` with mode `0700`. It also sets the CLI source executable and creates the `~/.local/bin/agentnotify` symlink.
+The installer creates `~/.local/share/agentnotify` and `~/.local/state/agentnotify` with mode `0700`. It creates the exact-checkout CLI symlink and the private atomic deployment receipt; it does not mutate the source executable.
 
 Environment variables:
 
@@ -153,4 +153,4 @@ bun run check
 bash scripts/uninstall.sh
 ```
 
-Uninstall removes only the `~/.local/bin/agentnotify` symlink owned by the current checkout. It preserves history, state, and phone configuration. Any other entry at the executable path is left untouched.
+Uninstall removes only the `~/.local/bin/agentnotify` symlink owned by the current checkout and its matching deployment receipt. It preserves history, unrelated state, and phone configuration. Any other entry at the executable path is left untouched.
