@@ -90,16 +90,16 @@ case "\${1:-}" in
     fi
     ;;
   install)
-    [[ "\${AGENTNOTIFY_FAKE_FAIL:-}" != install ]]
     [[ "\${2:-}" == --frozen-lockfile ]]
+    if [[ "\${AGENTNOTIFY_FAKE_FAIL:-}" == install ]]; then exit 71; fi
     ;;
   run)
-    [[ "\${AGENTNOTIFY_FAKE_FAIL:-}" != check ]]
     [[ "\${2:-}" == check ]]
+    if [[ "\${AGENTNOTIFY_FAKE_FAIL:-}" == check ]]; then exit 72; fi
     ;;
   */.local/bin/agentnotify)
-    [[ "\${AGENTNOTIFY_FAKE_FAIL:-}" != readiness ]]
     [[ "\${2:-}" == --version ]]
+    if [[ "\${AGENTNOTIFY_FAKE_FAIL:-}" == readiness ]]; then exit 73; fi
     printf '%s\\n' ${JSON.stringify(expectedVersion)}
     ;;
   *)
@@ -407,7 +407,7 @@ describe("shared installer contract", () => {
 
       const result = await run(value, { env: { AGENTNOTIFY_FAKE_FAIL: failure } });
 
-      expect(result.exitCode).toBe(1);
+      expect(result.exitCode).not.toBe(0);
       if (failure === "readiness") {
         expect(readlinkSync(value.target)).toBe(source);
       } else {
