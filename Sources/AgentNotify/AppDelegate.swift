@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     private var server: SocketServer?
     private var service: NotifyService?
     private var native: NativeNotifications?
+    private var focusMonitor: Any?
     private let model = InboxModel()
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
@@ -33,6 +34,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             model.onQuit = { NSApplication.shared.terminate(nil) }
             model.onChangeCount = { [weak self] count in self?.updateStatus(count) }
             controller = NSHostingController(rootView: InboxView(model: model))
+            // Pointer input ends control navigation without interrupting text
+            // editing. Tab and VoiceOver retain the native focus behavior.
+            focusMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]) { [weak self] event in
+                guard let self, let window = self.controller.view.window, event.window === window else { return event }
+                if !NSWorkspace.shared.isVoiceOverEnabled, !(window.firstResponder is NSTextView) {
+                    window.makeFirstResponder(nil)
+                }
+                return event
+            }
             popover.contentViewController = controller; popover.contentSize = NSSize(width: 440, height: 610)
             popover.behavior = .transient; popover.animates = false; popover.delegate = self
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -60,11 +70,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     @objc private func toggle() { if popover.isShown || panel?.isVisible == true { closeSurface() } else { show() } }
     func show() {
         native?.refreshSettings(retryDenied: true); model.refresh()
-        if model.detached { panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
+        let wasVisible = model.detached ? panel?.isVisible == true : popover.isShown
+        if model.detached {
+            panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+            if !wasVisible { clearOpeningFocus() }
+            return
+        }
         guard let button = statusItem.button else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
         NSApp.activate(ignoringOtherApps: true)
+        if !wasVisible { clearOpeningFocus() }
+    }
+    private func clearOpeningFocus() {
+        if !NSWorkspace.shared.isVoiceOverEnabled, !model.searchVisible { controller.view.window?.makeFirstResponder(nil) }
     }
     private func closeSurface() { if model.detached { panel?.orderOut(nil) } else { popover.performClose(nil) } }
     private func toggleDetached() {
@@ -82,6 +101,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             panel.contentViewController = controller; panel.delegate = self; panel.setFrameAutosaveName("AgentNotifyInbox")
             if let origin { panel.setFrameOrigin(origin) } else { panel.center() }
             self.panel = panel; model.detached = true; panel.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
+            clearOpeningFocus()
         }
     }
     #if DEBUG
@@ -106,6 +126,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         } catch { stderr("Native panel check failed: \(error.localizedDescription)"); exit(1) }
     }
     #endif
-    func applicationWillTerminate(_ notification: Notification) { server?.stop(); service?.stop() }
+    func applicationWillTerminate(_ notification: Notification) {
+        if let focusMonitor { NSEvent.removeMonitor(focusMonitor) }
+        server?.stop(); service?.stop()
+    }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 }

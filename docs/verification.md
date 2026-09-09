@@ -14,4 +14,6 @@ The Computer Use service timed out selecting the preview app, so pointer-driven 
 
 ## Repeat native verification
 
+September 9 focus refinement: Computer Use successfully inspected an isolated preview bundle. Opening the popover and detaching left focus on the window, Tab focused Inbox with its native indicator, and a pointer click cleared that control focus. Mouse category selection remained quiet. Search accepted typed text, and Escape closed search. The installed inbox was not used for these checks. Debug and release builds passed.
+
 Build the debug product and package it into a disposable app bundle with its own bundle ID. Set `AGENTNOTIFY_STATE_DIR` to a seeded disposable store, `AGENTNOTIFY_PREVIEW=1`, and `AGENTNOTIFY_SELF_CHECK_DIR` to an output directory. Launch the bundle with `app`. The debug check emits `native-panel-check.json` and `native-detached.png`, then terminates. This instrumentation is omitted from release builds.

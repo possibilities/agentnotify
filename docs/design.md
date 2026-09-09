@@ -16,6 +16,8 @@ One action is a button; multiple actions form an Options menu; a reply expands a
 
 The popover and detached panel reuse one hosting controller and model. Hiding a window never changes task state. API/MCP `show` can select a notification and choose detached presentation.
 
+Opening a panel does not automatically focus the category menu. Pointer input clears control focus while preserving an active text editor. Tab and keyboard menu navigation retain native focus indication; VoiceOver retains native focus behavior. Do not suppress every focus ring to make a surface quieter.
+
 ## References and verification
 
 [Vercel design.md](https://vercel.com/design.md) supplies transferable composition and restraint guidance, not Vercel branding for this app. [Web Interface Guidelines](https://vercel.com/design/guidelines) inform native keyboard, focus, label, contrast, and state handling. The wiki’s “Vercel design guidance for native fleet apps” records the adaptation and links the fleet’s chromeless guidance.
