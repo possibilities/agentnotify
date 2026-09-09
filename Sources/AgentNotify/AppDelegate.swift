@@ -51,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             guard let self else { return false }
             return (self.popover.isShown || self.panel?.isVisible == true) && !self.model.detached && !NSWorkspace.shared.isVoiceOverEnabled
                 && !(self.controller.view.window?.firstResponder is NSTextView)
+                && self.controller.view.window?.attachedSheet == nil
         },
         dismiss: { [weak self] in self?.closeSurface() }
     )
