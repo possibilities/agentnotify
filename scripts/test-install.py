@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='an-install-', dir='/tmp') as directory:
     metadata = plistlib.loads((bundle/'Contents/Info.plist').read_bytes())
     assert metadata['CFBundleIdentifier'] == 'io.arthack.agentnotify'
     assert metadata['LSUIElement'] is True
-    assert command.resolve() == bundle/'Contents/MacOS/AgentNotify'
+    assert command.resolve() == (bundle/'Contents/MacOS/AgentNotify').resolve()
     assert (binary_dir/'terminal-notifier').resolve() == command.resolve()
     version = subprocess.run([str(binary_dir/'terminal-notifier'), '-version'], capture_output=True, text=True, timeout=5)
     assert version.returncode == 0 and version.stdout == 'terminal-notifier 3.1.0.\n'
