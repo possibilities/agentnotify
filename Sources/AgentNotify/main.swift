@@ -4,6 +4,12 @@ import NotifyCore
 
 let args = Array(CommandLine.arguments.dropFirst())
 #if DEBUG
+if args.first == "check-feedback" {
+    _ = NSApplication.shared
+    do {
+        stdout(JSON.string(["ok": true, "checks": try InboxFeedbackChecks.run()]) + "\n"); exit(0)
+    } catch { stderr(error.localizedDescription); exit(1) }
+}
 if args.first == "check-hover" {
     _ = NSApplication.shared
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 610), styleMask: [.borderless], backing: .buffered, defer: false)

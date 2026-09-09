@@ -49,7 +49,7 @@ enum PreviewRenderer {
             for style in ArrivalStyle.allCases {
                 preferences.select(style)
                 if let window = preferencesWindow.window {
-                    try capture(window, output.appendingPathComponent("\(theme)-preferences-\(style.rawValue).png"), width: 512, height: 560)
+                    try capture(window, output.appendingPathComponent("\(theme)-preferences-\(style.rawValue).png"), width: 512, height: 688)
                 }
             }
         }

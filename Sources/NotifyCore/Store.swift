@@ -62,9 +62,10 @@ public final class Store {
             if let expected = p["expectedRevision"] as? Int, expected != current.revision {
                 throw NotifyError("revision_conflict", "Preferences changed. Read preferences and retry with their current revision.")
             }
-            let style = ArrivalStyle(rawValue: p["arrivalStyle"] as! String)!
-            if current.arrivalStyle != style {
-                current.arrivalStyle = style
+            let previous = current
+            if let style = p["arrivalStyle"] as? String { current.arrivalStyle = ArrivalStyle(rawValue: style)! }
+            if let show = p["showBannerReminder"] as? Bool { current.showBannerReminder = show }
+            if current != previous {
                 current.revision += 1
                 try db.run("INSERT INTO preferences(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json", [JSON.string(try JSON.encode(current))])
             }

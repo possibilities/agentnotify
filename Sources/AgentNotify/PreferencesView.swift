@@ -15,6 +15,7 @@ final class PreferencesModel: ObservableObject {
     ))
     var service: NotifyService?
     var onChange: ((AppPreferences) -> Void)?
+    var onSystemSettings: (() -> Void)?
 
     func refresh() {
         do {
@@ -57,10 +58,21 @@ final class PreferencesModel: ObservableObject {
     }
 
     func select(_ style: ArrivalStyle) {
-        guard style != current.arrivalStyle, let service else { return }
+        guard style != current.arrivalStyle else { return }
+        update(["arrivalStyle": style.rawValue])
+    }
+
+    func setBannerReminder(_ show: Bool) {
+        guard show != current.showBannerReminder else { return }
+        update(["showBannerReminder": show])
+    }
+
+    private func update(_ changes: [String: Any]) {
+        guard let service else { return }
         do {
-            _ = try service.call("setPreferences", ["arrivalStyle": style.rawValue,
-                "expectedRevision": current.revision, "requestId": UUID().uuidString])
+            var params = changes
+            params["expectedRevision"] = current.revision; params["requestId"] = UUID().uuidString
+            _ = try service.call("setPreferences", params)
             error = nil
             // Read the authoritative value, including any newer concurrent write.
             refresh()
@@ -76,7 +88,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     init(model: PreferencesModel) {
         self.model = model
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 512, height: 560),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 512, height: 688),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Preferences"
         window.isReleasedWhenClosed = false
@@ -84,7 +96,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         let host = NSHostingController(rootView: PreferencesView(model: model))
         host.sizingOptions = []
         window.contentViewController = host
-        window.setContentSize(NSSize(width: 512, height: 560))
+        window.setContentSize(NSSize(width: 512, height: 688))
         super.init(window: window)
         window.delegate = self
         window.center()
@@ -111,6 +123,17 @@ struct PreferencesView: View {
             Divider().opacity(0.5)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
+                    Text("Notifications").font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button("System Settings…") { model.onSystemSettings?() }.disabled(model.onSystemSettings == nil)
+                }
+                Toggle("Show a reminder when macOS banners are off", isOn: Binding(get: { model.current.showBannerReminder }, set: model.setBannerReminder))
+                    .toggleStyle(.checkbox).font(.system(size: 12))
+                Text("Dismissing the reminder turns this off.").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            Divider().opacity(0.5)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
                     Text("Terminal integration").font(.system(size: 13, weight: .semibold))
                     Spacer()
                     Button(model.installingShim ? "Installing…" : (model.shimInstalled ? "Reinstall shim" : "Install shim")) { model.installShim() }
@@ -130,7 +153,7 @@ struct PreferencesView: View {
         }
         .padding(28)
         }
-        .frame(width: 512, height: 560, alignment: .topLeading)
+        .frame(width: 512, height: 688, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(.primary)
     }

@@ -161,7 +161,7 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         check(bad['isError'], 'MCP validation parity')
         preference_cursor = ok('diagnose')['cursor']
         initial_preferences = ok('preferences')
-        check(initial_preferences == {'arrivalStyle': 'queue-peek', 'revision': 1}, 'default preferences')
+        check(initial_preferences == {'arrivalStyle': 'queue-peek', 'showBannerReminder': True, 'revision': 1}, 'default preferences')
         selected = cli('setPreferences', '--arrivalStyle', 'compact-toast', '--expectedRevision', '1', '--requestId', 'pref-cli')
         check(selected.returncode == 0 and json.loads(selected.stdout)['data']['arrivalStyle'] == 'compact-toast', 'CLI preference write')
         read_preferences = mcp_call(5, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
@@ -187,13 +187,19 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         else:
             check(api('installShim')['error']['code'] == 'installer_unavailable', 'missing owner is reported without installation')
         check(ok('diagnose')['cursor'] == preference_cursor, 'shim setup does not emit notification changes')
+        reminder = cli('setPreferences', '--showBannerReminder', 'false', '--expectedRevision', '3')
+        check(reminder.returncode == 0 and not json.loads(reminder.stdout)['data']['showBannerReminder'], 'CLI hides banner reminder')
+        reminder_read = mcp_call(9, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
+        check(reminder_read == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'revision': 4}, 'MCP observes independent banner reminder preference')
+        check(cli('setPreferences', '--showBannerReminder', 'invalid').returncode == 2, 'invalid reminder preference rejected')
+        check(api('setPreferences', {'expectedRevision': 4})['error']['code'] == 'invalid_argument', 'empty preference change rejected')
         mcp.stdin.close(); mcp.wait(timeout=5)
         # Persisted state and resumable change stream survive a full service restart.
         before = ok('diagnose')
         first = ok('changes', {'after': 0, 'limit': 2})
         check(first['hasMore'] and len(first['changes']) == 2, 'change pagination')
         stop(); start()
-        check(ok('preferences') == {'arrivalStyle': 'queue-shelf', 'revision': 3}, 'preferences survive service restart')
+        check(ok('preferences') == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'revision': 4}, 'preferences survive service restart')
         check(ok('shimStatus')['promptHandled'], 'shim offer choice survives service restart')
         check(ok('diagnose')['total'] == before['total'], 'durable records after restart')
         check(ok('get', {'id': conflict['id']})['readAt'] is not None, 'durable read state')

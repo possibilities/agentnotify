@@ -91,13 +91,15 @@ struct InboxView: View {
                     IconButton(symbol: "xmark", label: "Dismiss Error") { model.error = nil }
                 }.font(.system(size: 12)).padding(12).background(Color.primary.opacity(0.05)).padding(.horizontal, 16).padding(.bottom, 10)
             }
-            if model.authorization == "not-determined" || model.authorization == "denied" || (["authorized", "provisional"].contains(model.authorization) && !model.systemBannersEnabled) {
+            if model.showBannerReminder && (model.authorization == "not-determined" || model.authorization == "denied" || (["authorized", "provisional"].contains(model.authorization) && !model.systemBannersEnabled)) {
                 HStack {
                     Button { model.onEnable?() } label: {
                         Label("Turn on macOS banners", systemImage: "bell")
                     }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
                         .help("Open notification settings for AgentNotify")
                     Spacer(minLength: 0)
+                    IconButton(symbol: "xmark", label: "Hide banner reminder") { model.onDismissBannerReminder?() }
+                        .help("Show this reminder again in Preferences")
                 }.padding(.horizontal, 20).padding(.bottom, 14)
             }
             if model.visible.isEmpty { emptyState }

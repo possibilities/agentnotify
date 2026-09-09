@@ -67,7 +67,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let server = try SocketServer(paths: service.store.paths, handler: service.handle)
             self.service = service; self.server = server; model.service = service
             preferencesModel.service = service
-            preferencesModel.onChange = { [weak self] preferences in self?.arrivals.style = preferences.arrivalStyle }
+            preferencesModel.onChange = { [weak self] preferences in
+                self?.arrivals.style = preferences.arrivalStyle
+                self?.model.showBannerReminder = preferences.showBannerReminder
+            }
             preferencesModel.refresh()
             service.onPreferencesChange = { [weak self] in DispatchQueue.main.async { self?.preferencesModel.refresh() } }
             service.onShowPreferences = { [weak self] in DispatchQueue.main.async { self?.showPreferences() } }
@@ -94,6 +97,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             model.onClose = { [weak self] in self?.closeSurface() }
             model.onEnable = { [weak self] in self?.native?.enable() }
             model.onPreferences = { [weak self] in self?.showPreferences() }
+            preferencesModel.onSystemSettings = { [weak self] in self?.native?.enable() }
+            model.onDismissBannerReminder = { [weak self] in
+                guard let self else { return }
+                self.preferencesModel.setBannerReminder(false)
+                if let error = self.preferencesModel.error { self.model.error = error }
+            }
             model.onQuit = { NSApplication.shared.terminate(nil) }
             model.onChangeCount = { [weak self] count in self?.updateStatus(count) }
             model.onOpenArrivals = { [weak self] in

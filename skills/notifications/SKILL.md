@@ -47,7 +47,7 @@ For concurrent clients, include a unique `requestId` on mutations and reuse it w
 
 ## Appearance preferences
 
-`preferences` reads the saved arrival design and revision. `setPreferences` accepts `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`), `expectedRevision`, and `requestId`; change it when the human asks. Queue Peek is the default. `showPreferences` opens the native settings window. These operations have the same CLI/socket/MCP contract and do not change notification state.
+`preferences` reads the saved arrival design and revision. `setPreferences` accepts `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`), `showBannerReminder` (boolean), `expectedRevision`, and `requestId`; change settings when the human asks. Supply at least one setting; omitted settings stay unchanged. Dismissing the inbox banner reminder saves false, and Preferences can restore it. This does not alter macOS banner settings. Queue Peek is the default. `showPreferences` opens the native settings window. These operations have the same CLI/socket/MCP contract and do not change notification state.
 
 AgentStart exposes the full MCP in managed Codex, Claude, and AgentVoice sessions and authenticated HTTP fleet/Grok toolsets. HTTP names have the `agentnotify_` prefix, such as `agentnotify_send` and `agentnotify_preferences`; use the tools advertised by the current client. A running stdio session retains its loaded tool catalog until that session ends.
 

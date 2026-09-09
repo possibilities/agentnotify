@@ -2,6 +2,28 @@ import Foundation
 import NotifyCore
 
 final class PreferencesChecks: StoreTestsBase {
+    func bannerReminderMigrationAndIndependentUpdates() throws {
+        let legacy = try JSON.decode(AppPreferences.self, ["arrivalStyle": "queue-shelf", "revision": 9])
+        expectTrue(legacy.showBannerReminder)
+        expectEqual(legacy.arrivalStyle, .queueShelf)
+        let hidden = try store.perform("setPreferences", params: ["showBannerReminder": false, "expectedRevision": 1])
+        expectEqual(hidden["revision"] as? Int, 2)
+        store = try Store(paths: NotifyPaths(root: root))
+        expectFalse(try store.preferences().showBannerReminder)
+        expectEqual(try store.preferences().arrivalStyle, .queuePeek)
+        _ = try store.perform("setPreferences", params: ["arrivalStyle": "compact-toast", "expectedRevision": 2])
+        expectFalse(try store.preferences().showBannerReminder)
+        expectThrows(try store.perform("setPreferences", params: ["showBannerReminder": true, "expectedRevision": 2]))
+        expectThrows(try store.perform("setPreferences", params: ["showBannerReminder": "false"]))
+        expectThrows(try store.perform("setPreferences", params: ["expectedRevision": 3]))
+        let same = try store.perform("setPreferences", params: ["showBannerReminder": false])
+        expectEqual(same["revision"] as? Int, 3)
+        let both = try store.perform("setPreferences", params: ["showBannerReminder": true, "arrivalStyle": "queue-shelf", "expectedRevision": 3])
+        expectEqual(both["revision"] as? Int, 4)
+        expectTrue(try store.preferences().showBannerReminder)
+        expectEqual(try store.cursor(), 0)
+    }
+
     func persistenceAndIsolation() throws {
         let notice = try store.perform("send", params: ["message": "Keep this task"])
         let cursor = try store.cursor()

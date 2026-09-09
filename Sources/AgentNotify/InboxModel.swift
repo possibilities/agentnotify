@@ -16,13 +16,33 @@ final class InboxModel: ObservableObject {
     @Published var searchVisible = false
     @Published var authorization = "checking"
     @Published var systemBannersEnabled = true
+    @Published var showBannerReminder = true
     @Published var arrivalIDs: [String] = []
     @Published var error: String?
-    @Published var undoItem: (id: String, revision: Int)?
+    @Published var undoItem: (id: String, revision: Int)? {
+        didSet {
+            undoTimer?.invalidate(); undoTimer = nil
+            undoGeneration += 1
+            guard undoItem != nil else { return }
+            let generation = undoGeneration
+            let timer = Timer(timeInterval: undoDuration, repeats: false) { [weak self] _ in
+                guard let self, self.undoGeneration == generation else { return }
+                self.undoItem = nil
+            }
+            undoTimer = timer
+            RunLoop.main.add(timer, forMode: .common)
+        }
+    }
+    private let undoDuration: TimeInterval
+    private var undoTimer: Timer?
+    private var undoGeneration = 0
+    init(undoDuration: TimeInterval = 60) { self.undoDuration = undoDuration }
+    deinit { undoTimer?.invalidate() }
     var service: NotifyService?
     var onDetach: (() -> Void)?
     var onEnable: (() -> Void)?
     var onPreferences: (() -> Void)?
+    var onDismissBannerReminder: (() -> Void)?
     var onClose: (() -> Void)?
     var onQuit: (() -> Void)?
     var onChangeCount: ((Int) -> Void)?
