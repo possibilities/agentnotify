@@ -3,6 +3,10 @@ import SwiftUI
 import NotifyCore
 
 final class InboxPanel: NSPanel {
+    // Match the native popover body's continuous corner, without a titled
+    // window's different corner mask and edge highlight.
+    static let cornerRadius: CGFloat = 20
+    var onDrag: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -18,18 +22,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var focusMonitor: Any?
     private var anchorWindow: NSWindow?
     private var inboxSize = NSSize(width: 440, height: 610)
+    private var manuallyPlaced = false
+    private var usesPanel: Bool { model.detached || manuallyPlaced }
     private lazy var hoverDismissal = PopoverDismissal(
         containsPointer: { [weak self] in
             guard let self else { return false }
             let point = NSEvent.mouseLocation
-            return self.controller.view.window?.frame.contains(point) == true || self.statusScreenFrame?.contains(point) == true
+            return self.controller.view.window?.frame.contains(point) == true
+                || (self.popover.isShown && self.statusScreenFrame?.contains(point) == true)
         },
         allowsDismissal: { [weak self] in
             guard let self else { return false }
-            return self.popover.isShown && !self.model.detached && !NSWorkspace.shared.isVoiceOverEnabled
+            return (self.popover.isShown || self.panel?.isVisible == true) && !self.model.detached && !NSWorkspace.shared.isVoiceOverEnabled
                 && !(self.controller.view.window?.firstResponder is NSTextView)
         },
-        dismiss: { [weak self] in self?.popover.performClose(nil) }
+        dismiss: { [weak self] in self?.closeSurface() }
     )
     #if DEBUG
     private var verificationAnchor: NSRect?
@@ -90,13 +97,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     @objc private func toggle() { if popover.isShown || panel?.isVisible == true { closeSurface() } else { show() } }
     func show() {
         native?.refreshSettings(retryDenied: true); model.refresh()
-        let wasVisible = model.detached ? panel?.isVisible == true : popover.isShown
-        if model.detached {
+        let wasVisible = usesPanel ? panel?.isVisible == true : popover.isShown
+        if usesPanel {
             panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-            if !wasVisible { clearOpeningFocus() }
+            if !wasVisible { clearOpeningFocus(); startHoverDismissal() }
             return
         }
         if !wasVisible {
+            if model.presentedAsPanel { restorePopover() }
             guard let anchor = updatePopoverAnchor(), let anchorView = anchor.contentView else { return }
             anchor.orderFront(nil)
             popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
@@ -105,14 +113,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.activate(ignoringOtherApps: true)
         if !wasVisible {
             clearOpeningFocus()
-            if let window = controller.view.window { hoverDismissal.start(window: window, statusButton: statusItem.button) }
+            startHoverDismissal()
         }
+    }
+    private func startHoverDismissal() {
+        guard !model.detached, let window = controller.view.window else { return }
+        hoverDismissal.start(window: window, statusButton: usesPanel ? nil : statusItem.button)
     }
     private func clearOpeningFocus() {
         if !NSWorkspace.shared.isVoiceOverEnabled, !model.searchVisible { controller.view.window?.makeFirstResponder(nil) }
     }
     private func closeSurface() {
-        if model.detached { panel?.orderOut(nil) } else { popover.performClose(nil) }
+        hoverDismissal.stop()
+        if usesPanel {
+            panel?.orderOut(nil)
+            if !model.detached { manuallyPlaced = false }
+        } else { popover.performClose(nil) }
     }
     func popoverDidClose(_ notification: Notification) {
         hoverDismissal.stop()
@@ -168,29 +184,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         guard let actual = contentScreenFrame else { return }
         panel.setFrameOrigin(NSPoint(x: panel.frame.minX + target.minX - actual.minX, y: panel.frame.minY + target.minY - actual.minY))
     }
+    private func restorePopover() {
+        if let size = contentScreenFrame?.size { inboxSize = size }
+        panel?.orderOut(nil); panel?.contentViewController = nil
+        controller.view.removeFromSuperview()
+        model.presentedAsPanel = false; manuallyPlaced = false
+        configurePopover()
+    }
     private func toggleDetached() {
         if model.detached {
-            if let size = contentScreenFrame?.size { inboxSize = size }
-            panel?.orderOut(nil); panel?.contentViewController = nil
-            controller.view.removeFromSuperview()
             model.detached = false
-            configurePopover(); show()
+            if manuallyPlaced {
+                clearOpeningFocus(); startHoverDismissal()
+            } else { restorePopover(); show() }
+        } else if manuallyPlaced {
+            hoverDismissal.stop(); model.detached = true; clearOpeningFocus()
         } else {
             if !popover.isShown { show() }
             guard let content = contentScreenFrame else { return }
             inboxSize = content.size
             popover.close(); popover.contentViewController = nil
             controller.view.removeFromSuperview()
-            let panel = self.panel ?? InboxPanel(contentRect: NSRect(origin: .zero, size: inboxSize), styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
-            panel.title = "Notifications"; panel.titleVisibility = .hidden; panel.titlebarAppearsTransparent = true
+            let panel = self.panel ?? InboxPanel(contentRect: NSRect(origin: .zero, size: inboxSize), styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
+            panel.title = "Notifications"
+            panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
             panel.isMovableByWindowBackground = true; panel.isReleasedWhenClosed = false; panel.level = .floating
             panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.minSize = NSSize(width: 360, height: 360); panel.maxSize = NSSize(width: 700, height: 1200)
-            [.closeButton, .miniaturizeButton, .zoomButton].forEach { panel.standardWindowButton($0)?.isHidden = true }
             panel.contentViewController = controller
-            self.panel = panel; model.detached = true
+            panel.onDrag = { [weak self] in self?.manuallyPlaced = true }
+            self.panel = panel; model.detached = true; model.presentedAsPanel = true
             placePanelContent(at: content)
+            panel.invalidateShadow()
             panel.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
             clearOpeningFocus()
         }
@@ -247,6 +273,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             toggleDetached(); settle()
             try moveAnchor(to: revealed); try moveAnchor(to: contracted); try moveAnchor(to: nil)
             toggleDetached(); settle()
+            toggleDetached(); settle()
+            guard let movedPanel = panel else { throw NotifyError("internal_error", "No panel to place manually.") }
+            movedPanel.onDrag?()
+            movedPanel.setFrameOrigin(movedPanel.frame.origin.applying(CGAffineTransform(translationX: -80, y: -90)))
+            guard let placed = contentScreenFrame else { throw NotifyError("internal_error", "No manually placed content.") }
+            for _ in 0..<3 {
+                toggleDetached(); settle(); show(); settle()
+                try require(!model.detached && model.presentedAsPanel && movedPanel.isVisible && !popover.isShown, "Unpin replaced the manually placed panel with a popover.")
+                try require(contentScreenFrame.map { near($0, placed) } == true, "Unpin moved the manually placed panel.")
+                toggleDetached(); settle()
+                try require(model.detached && contentScreenFrame.map { near($0, placed) } == true, "Repinning moved the manually placed panel.")
+            }
+            toggleDetached(); settle(); closeSurface(); show(); settle()
+            try require(popover.isShown && !model.presentedAsPanel && panel?.isVisible != true, "A fresh opening failed to restore the menu-bar popover.")
             if let selected = model.visible.first { model.select(selected); try require(try service?.store.get(selected.id).readAt != nil, "Opening details failed to persist read state.") }
             toggleDetached(); settle()
             if let panel, let content = contentScreenFrame { try PreviewRenderer.capture(panel, directory.appendingPathComponent("native-detached.png"), width: content.width, height: content.height) }
@@ -255,7 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             toggleDetached(); settle()
             closeSurface()
             try require(!popover.isShown && anchorWindow?.isVisible != true, "Closing left the popover or positioning window visible.")
-            let result: [String: Any] = ["ok": true, "checks": ["hidden and negative-coordinate menu anchors", "notched display safe top edge", "popover stays on display", "four pin/unpin cycles preserve content coordinates", "both surfaces stay still across revealed/contracted menu geometry and repeated show", "pinned window configured to persist across app deactivation", "shared content survives transitions", "closing hides the positioning window"], "frames": frames, "notifications": model.items.count]
+            let result: [String: Any] = ["ok": true, "checks": ["hidden and negative-coordinate menu anchors", "notched display safe top edge", "popover stays on display", "four pin/unpin cycles preserve content coordinates", "both surfaces stay still across revealed/contracted menu geometry and repeated show", "manually placed panel stays in place without a triangle through three pin/unpin cycles", "fresh opening restores the menu-bar popover", "pinned window configured to persist across app deactivation", "shared content survives transitions", "closing hides the positioning window"], "frames": frames, "notifications": model.items.count]
             try JSON.data(result.merging(["hoverChecks": hoverChecks]) { _, new in new }).write(to: directory.appendingPathComponent("native-panel-check.json"))
             NSApp.terminate(nil)
         } catch { stderr("Native panel check failed: \(error.localizedDescription)"); exit(1) }

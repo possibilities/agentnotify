@@ -27,9 +27,9 @@ enum PreviewRenderer {
         window.contentViewController = controller
         for theme in ["light", "dark"] {
             window.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
-            model.filter = "inbox"; model.group = nil; model.query = ""; model.searchVisible = false; model.selected = nil; model.detached = false
+            model.filter = "inbox"; model.group = nil; model.query = ""; model.searchVisible = false; model.selected = nil; model.detached = false; model.presentedAsPanel = false
             try capture(window, output.appendingPathComponent("\(theme)-inbox.png"), width: 440, height: 680)
-            model.selected = model.items.first?.id; model.detached = true
+            model.selected = model.items.first?.id; model.detached = true; model.presentedAsPanel = true
             try capture(window, output.appendingPathComponent("\(theme)-detached.png"), width: 440, height: 680)
             model.filter = "all"; model.searchVisible = true; model.query = "no matching notification"
             try capture(window, output.appendingPathComponent("\(theme)-empty-search.png"), width: 360, height: 500)

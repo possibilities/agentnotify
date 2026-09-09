@@ -4,6 +4,8 @@
 
 Operations: send, list, get, status, respond, remove, changes, diagnose, show, heartbeat. Modern CLI flags match parameter names (`--actionIndex`, `--expectedRevision`, `--requestId`). An actions value is a JSON string array. The legacy `-action` spelling remains repeatable and comma-separated.
 
+`show detached:true` pins the inbox; `detached:false` unpins it while retaining any manual placement and keeping the menu-bar triangle hidden. Omit `detached` to preserve pin state. After an unpinned inbox closes, a fresh opening returns to the anchored popover.
+
 The app owns a private Unix socket at `<state>/notify.sock`. Each request is one UTF-8 JSON line:
 
 ```json

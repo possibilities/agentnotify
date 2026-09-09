@@ -9,7 +9,10 @@ final class InboxModel: ObservableObject {
     @Published var group: String? = nil
     @Published var period = "any"
     @Published var selected: String? = nil
+    // Pin state is separate from placement: unpinning a manually moved panel
+    // changes its lifetime without restoring the menu-bar triangle.
     @Published var detached = false
+    @Published var presentedAsPanel = false
     @Published var searchVisible = false
     @Published var authorization = "checking"
     @Published var error: String?

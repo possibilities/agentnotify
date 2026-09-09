@@ -32,6 +32,7 @@ private struct InboxDragRegion: NSViewRepresentable {
         }
         override func mouseDragged(with event: NSEvent) {
             guard let panel = window as? InboxPanel, let start = dragStart else { return }
+            panel.onDrag?()
             let pointer = panel.convertPoint(toScreen: event.locationInWindow)
             panel.setFrameOrigin(NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + pointer.y - start.pointer.y))
         }
@@ -104,6 +105,7 @@ struct InboxView: View {
         }
         .frame(minWidth: 360, minHeight: 340)
         .background(Color(nsColor: .windowBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: model.presentedAsPanel ? InboxPanel.cornerRadius : 0, style: .continuous))
         .tint(.primary)
         .ignoresSafeArea(.container, edges: .top)
         .onExitCommand { if model.searchVisible { model.query = ""; model.searchVisible = false } else if model.selected != nil { model.selected = nil } else { model.onClose?() } }
