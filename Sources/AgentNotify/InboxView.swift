@@ -23,6 +23,28 @@ struct IconButton: View {
     }
 }
 
+private struct InboxDragRegion: NSViewRepresentable {
+    final class DragView: NSView {
+        private var dragStart: (pointer: NSPoint, origin: NSPoint)?
+        override func mouseDown(with event: NSEvent) {
+            guard let panel = window as? InboxPanel else { return }
+            dragStart = (panel.convertPoint(toScreen: event.locationInWindow), panel.frame.origin)
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let panel = window as? InboxPanel, let start = dragStart else { return }
+            panel.onDrag?()
+            let pointer = panel.convertPoint(toScreen: event.locationInWindow)
+            panel.setFrameOrigin(NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + pointer.y - start.pointer.y))
+        }
+        override func mouseUp(with event: NSEvent) { dragStart = nil }
+        override var acceptsFirstResponder: Bool { false }
+    }
+    func makeNSView(context: Context) -> DragView {
+        let view = DragView(); view.setAccessibilityElement(false); return view
+    }
+    func updateNSView(_ nsView: DragView, context: Context) {}
+}
+
 struct InboxView: View {
     @ObservedObject var model: InboxModel
     @FocusState private var searchFocused: Bool
@@ -97,7 +119,7 @@ struct InboxView: View {
                 Text(model.filters.first(where: { $0.0 == model.filter })?.1 ?? "Inbox").font(.system(size: 20, weight: .semibold))
             }.menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize().accessibilityLabel("Notification Category")
             Text(model.visible.count.formatted()).font(.system(size: 13)).monospacedDigit().foregroundStyle(.secondary).accessibilityLabel("\(model.visible.count) notifications")
-            Spacer(minLength: 6)
+            InboxDragRegion().frame(minWidth: 6, maxWidth: .infinity).frame(height: 28)
             IconButton(symbol: "magnifyingglass", label: "Search Notifications") { model.searchVisible.toggle(); searchFocused = model.searchVisible }
             Menu {
                 Menu("Group") {
@@ -112,13 +134,13 @@ struct InboxView: View {
                 if model.group != nil || model.period != "any" { Button("Clear Filters") { model.group = nil; model.period = "any" } }
             } label: { Image(systemName: model.group != nil || model.period != "any" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease").frame(width: 28, height: 28) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Filter by Group or Time").accessibilityLabel("Filter by Group or Time")
-            IconButton(symbol: model.detached ? "pin.fill" : "pin", label: model.detached ? "Return to Menu Bar" : "Detach Inbox") { model.onDetach?() }
+            IconButton(symbol: model.detached ? "pin.fill" : "pin", label: model.detached ? "Unpin Inbox" : "Pin Inbox") { model.onDetach?() }
             Menu {
+                Button("Close Inbox") { model.onClose?() }
                 Button("Notification Settings…") { model.onEnable?() }
                 Button("Quit AgentNotify") { model.onQuit?() }
             } label: { Image(systemName: "ellipsis").frame(width: 22, height: 28) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More Options").accessibilityLabel("More Options")
-            if model.detached { IconButton(symbol: "xmark", label: "Close Inbox") { model.onClose?() } }
         }.padding(.leading, 20).padding(.trailing, 14).padding(.top, 18).padding(.bottom, 20)
     }
     private var emptyState: some View {
