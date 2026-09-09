@@ -67,7 +67,7 @@ func runCLI(_ args: [String]) -> Int32 {
             Thread.sleep(forTimeInterval: 0.05); item = try JSON.decode(NotificationRecord.self, client.result("get", ["id": item.id]))
         }
         if ["denied", "failed", "pending"].contains(item.delivery), item.interactive { _ = try? client.result("respond", ["id": item.id, "kind": "interrupt"]) }
-        if item.delivery == "denied" { stderr("Notifications are not authorized. Enable them in AgentNotify. Saved to inbox as \(item.id)."); return 3 }
+        if item.delivery == "denied" { stderr("Optional macOS banners are off. Saved to AgentNotify as \(item.id)."); return 3 }
         if item.delivery == "failed" { stderr("Native delivery failed: \(item.deliveryError ?? "unknown error"). Saved as \(item.id)."); return 5 }
         if item.delivery == "pending" { stderr("Native registration timed out. Saved to inbox as \(item.id)."); return 4 }
         if item.delivery == "inbox-only" { stderr("Saved to the headless inbox; system notifications are unavailable.") }

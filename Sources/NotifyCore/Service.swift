@@ -6,6 +6,7 @@ public final class NotifyService {
     public var onChange: (() -> Void)?
     public var onShow: ((String?, Bool?) -> Void)?
     public var onShowPreferences: (() -> Void)?
+    public weak var interfaceController: NotifyInterfaceController?
     public var onPreferencesChange: (() -> Void)?
     public var nativeInfo: (() -> [String: Any])?
     public var nativeList: ((Bool) throws -> Set<String>)?
@@ -43,13 +44,28 @@ public final class NotifyService {
             return result
         }
         if method == "showPreferences" {
+            if let interfaceController {
+                let state = try interfaceController.performInterface("uiShow", params: ["surface": "preferences"])
+                return ["shown": true, "state": state]
+            }
             guard let onShowPreferences else { throw NotifyError("native_unavailable", "This is a headless service. Open AgentNotify.app to use preferences.") }
             onShowPreferences(); return ["shown": true]
         }
         if method == "show" {
-            guard let onShow else { throw NotifyError("native_unavailable", "This is a headless service. Open AgentNotify.app to use the inbox.") }
             if let id = params["id"] as? String { _ = try store.get(id) }
+            if let interfaceController {
+                var ui: [String: Any] = ["surface": "inbox"]
+                if let id = params["id"] { ui["id"] = id }
+                if let detached = params["detached"] { ui["pinned"] = detached }
+                let state = try interfaceController.performInterface("uiShow", params: ui)
+                return ["shown": true, "state": state]
+            }
+            guard let onShow else { throw NotifyError("native_unavailable", "This is a headless service. Open AgentNotify.app to use the inbox.") }
             onShow(params["id"] as? String, params["detached"] as? Bool); return ["shown": true]
+        }
+        if method.hasPrefix("ui") {
+            guard let interfaceController else { throw NotifyError("native_unavailable", "This is a headless service. Open AgentNotify.app to control its native interface.") }
+            return try interfaceController.performInterface(method, params: params)
         }
         if method == "list", let filter = params["filter"] as? String, ["delivered", "pending"].contains(filter), let nativeList {
             let ids = try nativeList(filter == "pending")

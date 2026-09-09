@@ -15,8 +15,6 @@ final class InboxModel: ObservableObject {
     @Published var presentedAsPanel = false
     @Published var searchVisible = false
     @Published var authorization = "checking"
-    @Published var systemBannersEnabled = true
-    @Published var showBannerReminder = true
     @Published var arrivalIDs: [String] = []
     @Published var error: String?
     @Published var undoItem: (id: String, revision: Int)? {
@@ -40,9 +38,7 @@ final class InboxModel: ObservableObject {
     deinit { undoTimer?.invalidate() }
     var service: NotifyService?
     var onDetach: (() -> Void)?
-    var onEnable: (() -> Void)?
     var onPreferences: (() -> Void)?
-    var onDismissBannerReminder: (() -> Void)?
     var onClose: (() -> Void)?
     var onQuit: (() -> Void)?
     var onChangeCount: ((Int) -> Void)?
@@ -51,7 +47,8 @@ final class InboxModel: ObservableObject {
     var groups: [String] { Array(Set(items.map(\.group).filter { !$0.isEmpty })).sorted() }
     var inboxCount: Int { items.filter(\.isInbox).count }
     var unreadCount: Int { items.filter { $0.isInbox && $0.readAt == nil }.count }
-    var visible: [NotificationRecord] {
+    var visible: [NotificationRecord] { matching(filter: filter, query: query, group: group, period: period) }
+    func matching(filter: String, query: String, group: String?, period: String) -> [NotificationRecord] {
         let now = Date(), calendar = Calendar.current
         let since: Double
         switch period { case "today": since = calendar.startOfDay(for: now).timeIntervalSince1970; case "week": since = now.addingTimeInterval(-604800).timeIntervalSince1970; default: since = 0 }
@@ -84,6 +81,11 @@ final class InboxModel: ObservableObject {
         arrivalIDs.removeAll { $0 == id }
         guard let item = items.first(where: { $0.id == id }), item.readAt == nil else { return }
         call("status", ["id": id, "state": "read", "expectedRevision": item.revision])
+    }
+    func markAllRead() {
+        let references = visible.filter { $0.readAt == nil }.map { ["id": $0.id, "expectedRevision": $0.revision] as [String: Any] }
+        guard !references.isEmpty else { return }
+        call("statusBatch", ["items": references, "state": "read", "requestId": UUID().uuidString])
     }
     func done(_ item: NotificationRecord) {
         do {

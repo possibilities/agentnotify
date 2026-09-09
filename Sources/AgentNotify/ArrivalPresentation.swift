@@ -28,6 +28,7 @@ final class ArrivalPresentation {
     var displayedStyle: ArrivalStyle { model.style }
     var placement: ((NSSize) -> NSRect?)?
     var open: ((String) -> Void)?
+    var onChange: (() -> Void)?
 
     init(duration: TimeInterval = 5) { self.duration = duration }
     var isVisible: Bool { panel?.isVisible == true }
@@ -46,6 +47,7 @@ final class ArrivalPresentation {
         if (!hovered && pressedID == nil) || !wasVisible { selectLatest() }
         updateCounts(items)
         if !wasVisible { present() }
+        onChange?()
         remaining = duration
         if !hovered && pressedID == nil { schedule(duration) }
     }
@@ -169,10 +171,12 @@ final class ArrivalPresentation {
     }
 
     func dismiss() {
+        let changed = isVisible || !order.isEmpty
         generation += 1
         cancelTimer()
         panel?.orderOut(nil)
         order.removeAll(); records.removeAll(); hovered = false; pressedID = nil
+        if changed { onChange?() }
     }
 
     private func cancelTimer() { timer?.invalidate(); timer = nil; expiresAt = nil }

@@ -43,9 +43,20 @@ enum PreviewRenderer {
         window.close()
         let preferences = PreferencesModel()
         preferences.service = model.service
+        preferences.onSystemSettings = {}
         let preferencesWindow = PreferencesWindowController(model: preferences)
         for theme in ["light", "dark"] {
             preferencesWindow.window?.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
+            preferences.select(.queuePeek)
+            preferences.systemBannersEnabled = false
+            if let window = preferencesWindow.window {
+                try capture(window, output.appendingPathComponent("\(theme)-preferences-banners-off.png"), width: 512, height: 688)
+            }
+            preferences.systemBannersEnabled = true
+            if let window = preferencesWindow.window {
+                try capture(window, output.appendingPathComponent("\(theme)-preferences-banners-on.png"), width: 512, height: 688)
+            }
+            preferences.systemBannersEnabled = false
             for style in ArrivalStyle.allCases {
                 preferences.select(style)
                 if let window = preferencesWindow.window {

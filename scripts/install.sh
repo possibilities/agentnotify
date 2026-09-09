@@ -74,4 +74,4 @@ ln -sfn "$app/Contents/MacOS/AgentNotify" "$bin/agentnotify"
 if [ "$compat" = 1 ]; then ln -sfn "$app/Contents/MacOS/AgentNotify" "$bin/terminal-notifier"; fi
 mkdir -p "$install_root/.local/state/agentnotify-install"
 printf '%s\n' "$source_revision" > "$receipt"
-printf 'Installed %s. Open it to enable system notifications.\n' "$app"
+printf 'Installed %s. Open it to start using AgentNotify.\n' "$app"

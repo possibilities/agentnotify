@@ -8,6 +8,7 @@ final class PreferencesModel: ObservableObject {
     @Published private(set) var shimInstalled = false
     @Published private(set) var shimAvailable = false
     @Published private(set) var installingShim = false
+    @Published var systemBannersEnabled = false
     let preview = ArrivalViewModel(content: ArrivalContent(
         id: "preferences-sample", title: "Build finished", subtitle: "AgentNotify",
         message: "All checks passed. The next step is ready when you are.",
@@ -62,11 +63,6 @@ final class PreferencesModel: ObservableObject {
         update(["arrivalStyle": style.rawValue])
     }
 
-    func setBannerReminder(_ show: Bool) {
-        guard show != current.showBannerReminder else { return }
-        update(["showBannerReminder": show])
-    }
-
     private func update(_ changes: [String: Any]) {
         guard let service else { return }
         do {
@@ -85,6 +81,7 @@ final class PreferencesModel: ObservableObject {
 
 final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     let model: PreferencesModel
+    var onVisibilityChange: (() -> Void)?
 
     init(model: PreferencesModel) {
         self.model = model
@@ -108,8 +105,10 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         if !NSWorkspace.shared.isVoiceOverEnabled { window?.makeFirstResponder(nil) }
+        onVisibilityChange?()
     }
     func windowDidBecomeKey(_ notification: Notification) { model.refresh() }
+    func windowWillClose(_ notification: Notification) { onVisibilityChange?() }
 }
 
 struct PreferencesView: View {
@@ -123,13 +122,17 @@ struct PreferencesView: View {
             Divider().opacity(0.5)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("Notifications").font(.system(size: 13, weight: .semibold))
+                    Text("Optional macOS banners").font(.system(size: 13, weight: .semibold))
                     Spacer()
-                    Button("System Settings…") { model.onSystemSettings?() }.disabled(model.onSystemSettings == nil)
+                    if model.systemBannersEnabled {
+                        Button("Turn Off in System Settings…") { model.onSystemSettings?() }.disabled(model.onSystemSettings == nil)
+                    }
                 }
-                Toggle("Show a reminder when macOS banners are off", isOn: Binding(get: { model.current.showBannerReminder }, set: model.setBannerReminder))
-                    .toggleStyle(.checkbox).font(.system(size: 12))
-                Text("Dismissing the reminder turns this off.").font(.system(size: 11)).foregroundStyle(.secondary)
+                Label(model.systemBannersEnabled ? "macOS banners are on" : "macOS banners are off — recommended",
+                    systemImage: model.systemBannersEnabled ? "bell.badge" : "bell.slash")
+                    .font(.system(size: 12, weight: .medium))
+                Text("AgentNotify uses its own arrivals. macOS banners can duplicate them and may be hidden by Focus, screen sharing, or remote-control sessions.")
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Divider().opacity(0.5)
             VStack(alignment: .leading, spacing: 8) {
@@ -176,7 +179,7 @@ struct PreferencesView: View {
                     .accessibilityLabel("Visual sample of \(model.current.arrivalStyle.title)")
                     .frame(maxWidth: .infinity, minHeight: 144, alignment: .top)
             }
-            Text("Applies to new compact arrivals. macOS manages system banners.")
+            Text("Applies to new AgentNotify arrivals, independently of macOS banners.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }

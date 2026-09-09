@@ -2,9 +2,11 @@
 
 `agentnotify guide --json` is the authoritative operation/parameter contract. `agentnotify --help` and MCP schemas derive from the same catalog.
 
-Operations: send, list, get, status, respond, remove, changes, diagnose, show, heartbeat, preferences, setPreferences, showPreferences, shimStatus, installShim, dismissShimSetup. Modern CLI flags match parameter names (`--actionIndex`, `--expectedRevision`, `--requestId`). An actions value is a JSON string array. The legacy `-action` spelling remains repeatable and comma-separated.
+Operations include durable notification tools (`send`, `list`, `get`, `status`, `statusBatch`, `respond`, `remove`, `changes`), native interface tools (`uiState`, `uiShow`, `uiClose`, `uiSetView`, `uiNavigate`, `uiSetPinned`, `uiDismissArrival`, `uiCopy`), and diagnostics/preferences/setup operations. Modern CLI flags match parameter names (`--actionIndex`, `--expectedRevision`, `--requestId`). Actions use a JSON string array; `statusBatch.items` uses a JSON array of `{id, expectedRevision?}` references. The legacy `-action` spelling remains repeatable and comma-separated.
 
 `show detached:true` pins the inbox; `detached:false` unpins it while retaining any manual placement and keeping the menu-bar triangle hidden. Omit `detached` to preserve pin state. After an unpinned inbox closes, a fresh opening returns to the anchored popover.
+
+`status` accepts `read`, `unread`, `done`, `reopen`, or `snooze`. Snooze requires exactly one future Unix `until`, relative `in` duration, or local `at` clock/date. `statusBatch` applies the same state atomically to 1–100 unique notification references; a stale or invalid item rolls back the entire batch. The inbox's Mark All Read command snapshots the exact visible unread IDs and revisions, then uses this operation.
 
 The app owns a private Unix socket at `<state>/notify.sock`. Each request is one UTF-8 JSON line:
 
@@ -26,9 +28,17 @@ A legacy CLI send adds waiterId and renews heartbeat every second. Heartbeats ex
 
 The MCP uses newline JSON-RPC over stdio, initialize/ping/tools/list/tools/call, typed schemas, tool annotations, and structured envelopes alongside text content. It negotiates 2024-11-05, 2025-03-26, and 2025-06-18. No private per-harness registry or alternate lifecycle exists.
 
+## Native interface control
+
+The `ui` operations control semantic AppKit/SwiftUI state rather than screen coordinates. `uiState` returns an app-launch `instanceId`, in-memory `uiRevision`, visible surfaces, popover/panel and pin state, current category/search/group/period, exact selection, up to 100 compact matching rows, custom arrival state, and the current Undo target. Reading this state and selecting or navigating never marks a notification read.
+
+`uiShow` opens the inbox or Preferences; inbox calls can reveal an exact notification and set `pinned`. `uiClose` closes the inbox, Preferences, arrival, or all surfaces. `uiSetView` changes filters, search, selection, and detail expansion atomically. `uiNavigate` selects first/previous/next/last without wrapping or reading. `uiSetPinned` pins or unpins, `uiDismissArrival` closes only the transient custom arrival, and `uiCopy` copies the selected or exact notification's text or ID.
+
+Every interface mutation returns the resulting `uiState`. Supply `expectedInstanceId` and `expectedUIRevision` for commands whose target depends on what the human currently sees, and a `requestId` for safe retries. A stale app launch or UI revision returns `revision_conflict`; reusing a request ID for different input returns `request_conflict`. UI revisions are ephemeral and do not enter `changes`. A headless service returns `native_unavailable`. `show` and `showPreferences` remain compatibility aliases.
+
 ## App preferences
 
-`preferences` returns `{arrivalStyle, showBannerReminder, revision}`; a new store returns `queue-peek`, `showBannerReminder: true`, and revision 1. Older saved preferences default the added reminder field to true. `setPreferences` accepts optional `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`) and optional boolean `showBannerReminder`; provide at least one setting. `expectedRevision` and `requestId` remain optional. Omitted settings retain their current values, and changing both settings is one atomic revision. Writes are durable and transactional. A stale revision fails; identical request retries return their original result. A write with no changed settings does not increase the revision. Hiding the inbox banner reminder and toggling it in Preferences use this same contract; neither changes macOS settings. Preferences are local to this inbox service and separate from the notification change feed; clients reread `preferences` to refresh their settings.
+`preferences` returns `{arrivalStyle, showBannerReminder, revision}`; a new store returns `queue-peek`, `showBannerReminder: true`, and revision 1. `setPreferences` accepts optional `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`) and the retained `showBannerReminder` compatibility field; provide at least one setting. The native UI no longer displays or promotes a banner reminder, so that field is deprecated and visually inert. `expectedRevision` and `requestId` remain optional. Omitted settings retain their current values, and changing both settings is one atomic revision. Writes are durable and transactional. Preferences are local to this inbox service and separate from both change feeds.
 
 `showPreferences` opens the native Preferences window and returns `native_unavailable` for a headless service. All three operations are available through the CLI, Unix socket, and stdio MCP. AgentStart’s authenticated fleet and Grok HTTP toolsets expose them as `agentnotify_preferences`, `agentnotify_setPreferences`, and `agentnotify_showPreferences`, alongside the full notification contract.
 

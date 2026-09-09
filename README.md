@@ -9,7 +9,7 @@ scripts/build.sh
 open dist/AgentNotify.app
 ```
 
-Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. When macOS banners are off, new notifications appear in a compact preview beneath the tray for five seconds. Hover to keep it visible; click to read it in the full inbox. Dismissing the preview never completes the task. Enabled macOS banners retain their system sound, actions, and Focus behavior. More → Preferences lets you choose Queue Peek (default), Compact Toast, or Queue Shelf. Settings persist across restarts; macOS banner changes are detected while you use the app or System Settings.
+Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. New notifications appear in a compact AgentNotify preview beneath the tray for five seconds, independently of macOS banner, Focus, screen-sharing, and remote-control presentation policy. Hover to keep it visible; click to read it in the full inbox. Dismissing the preview never completes the task. Optional macOS banners can be enabled as an additional compatibility surface; clicking their body opens the item in AgentNotify, while explicit banner actions still answer the notification. More → Preferences lets you choose Queue Peek (default), Compact Toast, or Queue Shelf. Settings persist across restarts.
 
 The first inbox opening offers to install a terminal-notifier shim through AgentStart. Choose Not now to skip it; More → Preferences → Terminal integration keeps an Install shim button for later. An existing fleet shim is recognized automatically. The original notifier stays available as a fallback.
 
@@ -36,9 +36,14 @@ agentnotify send --title 'Review ready' --message 'Inspect the patch' --group 'r
 agentnotify list --filter unread
 agentnotify list --group 'review:task-123' --query patch
 agentnotify status --id NOTIFICATION_ID --state read --expectedRevision 2
+agentnotify status --id NOTIFICATION_ID --state snooze --in 1h
+agentnotify statusBatch --items '[{"id":"NOTIFICATION_ID","expectedRevision":2}]' --state read
 agentnotify respond --id NOTIFICATION_ID --kind action --actionIndex 0
 agentnotify changes --after 0 --limit 100
-agentnotify show --detached true
+agentnotify uiShow --surface inbox --pinned true
+agentnotify uiSetView --filter unread --query build
+agentnotify uiNavigate --direction next
+agentnotify uiState
 agentnotify guide --json
 agentnotify mcp
 ```
@@ -51,7 +56,7 @@ The private Unix socket uses newline-delimited JSON:
 {"id":"client-request","method":"list","params":{"filter":"inbox"}}
 ```
 
-Responses echo `id` and carry `{schema_version, ok, data, error}`. See [the API contract](docs/api.md). AgentStart’s shared MCP inventory exposes the same operations to AgentVoice, Codex, and Claude, plus its authenticated fleet and Grok HTTP toolsets; the shipped `notifications` skill teaches usage.
+Responses echo `id` and carry `{schema_version, ok, data, error}`. Durable notification operations work headlessly; semantic `ui*` operations control the local native inbox for voice-driven search, filtering, selection, navigation, pinning, and presentation. UI selection never marks a notification read. See [the API contract](docs/api.md) and [ADR 0002](docs/adr/0002-semantic-interface-control.md). AgentStart’s shared MCP inventory exposes the same operations to AgentVoice, Codex, and Claude, plus its authenticated fleet and Grok HTTP toolsets; the shipped `notifications` skill teaches usage.
 
 ## Durable behavior
 
@@ -78,6 +83,7 @@ Existing MCP clients launched through the installed entrypoints remain running d
 swift run NotifyCoreChecks
 swift build --product agentnotify
 python3 scripts/test-integration.py
+python3 scripts/test-interface.py
 # Requires a clean committed checkout; all install destinations are temporary:
 python3 scripts/test-install.py
 scripts/build.sh
@@ -89,4 +95,4 @@ Core checks use plain Swift so a full Xcode installation is unnecessary. Integra
 
 State lives at `$XDG_STATE_HOME/agentnotify` or `~/.local/state/agentnotify`, with a mode-0700 directory and mode-0600 socket/database. `AGENTNOTIFY_STATE_DIR` selects an isolated store and disables automatic app launch; run `agentnotify serve` for headless use. `AGENTNOTIFY_APP_PATH` overrides app discovery, and `AGENTNOTIFY_NO_LAUNCH=1` disables launch. No telemetry, cloud service, or inspection of other apps’ notifications.
 
-Design sources: [Vercel design.md](https://vercel.com/design.md), [Web Interface Guidelines](https://vercel.com/design/guidelines), and the wiki’s “Vercel design guidance for native fleet apps.” The architecture decision is [ADR 0001](docs/adr/0001-durable-inbox.md).
+Design sources: [Vercel design.md](https://vercel.com/design.md), [Web Interface Guidelines](https://vercel.com/design/guidelines), and the wiki’s “Vercel design guidance for native fleet apps.” Architecture decisions are [ADR 0001](docs/adr/0001-durable-inbox.md) and [ADR 0002](docs/adr/0002-semantic-interface-control.md).

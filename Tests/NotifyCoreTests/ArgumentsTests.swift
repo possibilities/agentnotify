@@ -22,6 +22,9 @@ final class ArgumentsTests: CheckCase {
         expectEqual(result.params["ignoreDnD"] as? Bool, true)
         expectThrows(try Arguments.parse(["send", "--message", "Hi", "--extra", "no"]))
         expectThrows(try Arguments.parse(["-message", "Hi", "-timeout", "nan"]))
+        let batch = try Arguments.parse(["statusBatch", "--items", "[{\"id\":\"one\",\"expectedRevision\":2}]", "--state", "snooze", "--in", "1h"])
+        expectEqual((batch.params["items"] as? [[String: Any]])?.first?["id"] as? String, "one")
+        expectEqual(batch.params["in"] as? String, "1h")
     }
     func testScheduleValidation() throws {
         expectEqual(try Schedule.duration("1.5h"), 5400)

@@ -69,6 +69,7 @@ public enum Arguments {
                 switch p.type {
                 case "string": result.params[key] = value
                 case "array": guard let array = try JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String] else { throw NotifyError("invalid_argument", "--\(key) requires a JSON string array.") }; result.params[key] = array
+                case "references": guard let array = try JSONSerialization.jsonObject(with: Data(value.utf8)) as? [[String: Any]] else { throw NotifyError("invalid_argument", "--\(key) requires a JSON array of notification references.") }; result.params[key] = array
                 case "integer": guard let integer = Int(value) else { throw NotifyError("invalid_argument", "--\(key) requires an integer.") }; result.params[key] = integer
                 case "number": guard let number = Double(value) else { throw NotifyError("invalid_argument", "--\(key) requires a number.") }; result.params[key] = number
                 case "boolean": guard ["true", "false"].contains(value) else { throw NotifyError("invalid_argument", "--\(key) requires true or false.") }; result.params[key] = value == "true"

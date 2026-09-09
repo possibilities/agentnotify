@@ -62,14 +62,8 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
             }
         }
     }
-    func enable() {
-        if authorization != .notDetermined {
-            if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
-        } else {
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
-                DispatchQueue.main.async { self.refreshSettings(retryDenied: true) }
-            }
-        }
+    func openSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
     }
     func nativeIDs(pending: Bool) throws -> Set<String> {
         let semaphore = DispatchSemaphore(value: 0)
@@ -97,7 +91,7 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
         for item in eligible where !item.nativeRegistered && item.delivery == "pending" && !registering.contains(item.id) {
             guard [.authorized, .provisional].contains(authorization) else {
                 if diagnostics()["authorization"] as? String == "checking" { continue }
-                try? service.store.updateDelivery(id: item.id, state: "denied", error: "Enable notifications to show system banners. This item is saved in your inbox.", registered: false)
+                try? service.store.updateDelivery(id: item.id, state: "denied", error: "Optional macOS banners are off. This item remains available in AgentNotify.", registered: false)
                 service.onChange?(); continue
             }
             registering.insert(item.id)
@@ -139,12 +133,13 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.identifier
         try? service.store.tick()
-        if response.actionIdentifier == UNNotificationDefaultActionIdentifier, (try? service.store.get(id).response) != nil {
+        if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+            // A banner body is navigation, like the custom arrival surface.
+            // Effects remain behind their explicit control in the full inbox.
             _ = try? service.call("show", ["id": id]); completionHandler(); return
         }
         var params: [String: Any] = ["id": id, "requestId": UUID().uuidString]
         switch response.actionIdentifier {
-        case UNNotificationDefaultActionIdentifier: params["kind"] = "body"
         case UNNotificationDismissActionIdentifier: params["kind"] = "close"
         case "reply": params["kind"] = "reply"; params["value"] = (response as? UNTextInputNotificationResponse)?.userText ?? ""
         default: params["kind"] = "action"; params["actionIndex"] = Int(response.actionIdentifier.replacingOccurrences(of: "action-", with: "")) ?? -1
