@@ -173,8 +173,10 @@ struct InboxView: View {
             Spacer()
             Image(systemName: model.filter == "inbox" && model.query.isEmpty && model.group == nil ? "checkmark" : "tray").font(.system(size: 27, weight: .regular)).foregroundStyle(.secondary).accessibilityHidden(true)
             Text(model.query.isEmpty && model.group == nil && model.period == "any" ? (model.filter == "inbox" ? "You’re All Caught Up" : "Nothing Here Yet") : "No Matching Notifications").font(.system(size: 15, weight: .semibold))
-            Text(model.query.isEmpty && model.group == nil && model.period == "any" ? "New notifications will be waiting here." : "Try another search or clear your filters.").font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
-            if !model.query.isEmpty || model.group != nil || model.period != "any" { Button("Clear Filters") { model.query = ""; model.group = nil; model.period = "any" }.buttonStyle(QuietButtonStyle()).padding(.top, 4) }
+            if !model.query.isEmpty || model.group != nil || model.period != "any" {
+                Text("Try another search or clear your filters.").font(.system(size: 12)).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                Button("Clear Filters") { model.query = ""; model.group = nil; model.period = "any" }.buttonStyle(QuietButtonStyle()).padding(.top, 4)
+            }
             Spacer(); Spacer().frame(height: 40)
         }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
     }
