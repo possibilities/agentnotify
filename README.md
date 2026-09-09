@@ -74,6 +74,8 @@ The installer requires a clean checkout, refuses foreign destinations and a runn
 swift run NotifyCoreChecks
 swift build --product agentnotify
 python3 scripts/test-integration.py
+# Requires a clean committed checkout; all install destinations are temporary:
+python3 scripts/test-install.py
 scripts/build.sh
 # Debug-only native view renders, without changing system appearance:
 .build/debug/agentnotify render-previews /tmp/agentnotify-renders
