@@ -14,7 +14,7 @@ enum ArrivalStudio {
         let state = ArrivalStudioState()
         if !selections.isEmpty {
             guard selections.count == 3,
-                  let variant = ArrivalStudioVariant(rawValue: selections[0]),
+                  let variant = ArrivalStyle(rawValue: selections[0]),
                   let scenario = ArrivalStudioScenario(rawValue: selections[1]),
                   let appearance = ArrivalStudioAppearance(rawValue: selections[2]) else {
                 throw NotifyError("invalid_params", "arrival-studio [queue-peek|compact-toast|queue-shelf single|burst|long light|dark]")
@@ -36,7 +36,7 @@ enum ArrivalStudio {
         let state = ArrivalStudioState()
         let controller = NSHostingController(rootView: ArrivalStudioPreview(state: state))
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: ArrivalStudioVariant.queuePeek.size),
+            contentRect: NSRect(origin: .zero, size: ArrivalStyle.queuePeek.size),
             styleMask: [.borderless], backing: .buffered, defer: false
         )
         window.contentViewController = controller
@@ -45,7 +45,7 @@ enum ArrivalStudio {
 
         for appearance in ArrivalStudioAppearance.allCases {
             window.appearance = appearance.nativeAppearance
-            for variant in ArrivalStudioVariant.allCases {
+            for variant in ArrivalStyle.allCases {
                 state.variant = variant
                 for scenario in ArrivalStudioScenario.allCases {
                     state.scenario = scenario
@@ -62,28 +62,6 @@ enum ArrivalStudio {
         }
         window.close()
         stdout("Rendered native arrival views to \(output.path)\n")
-    }
-}
-
-private enum ArrivalStudioVariant: String, CaseIterable, Identifiable {
-    case queuePeek = "queue-peek"
-    case compactToast = "compact-toast"
-    case queueShelf = "queue-shelf"
-
-    var id: String { rawValue }
-    var title: String {
-        switch self {
-        case .queuePeek: return "Queue Peek · production"
-        case .compactToast: return "Compact Toast · alternative"
-        case .queueShelf: return "Queue Shelf · alternative"
-        }
-    }
-    var size: NSSize {
-        switch self {
-        case .compactToast: return NSSize(width: 360, height: 96)
-        case .queuePeek: return ArrivalView.preferredSize
-        case .queueShelf: return NSSize(width: 440, height: 144)
-        }
     }
 }
 
@@ -125,7 +103,7 @@ private enum ArrivalStudioAppearance: String, CaseIterable, Identifiable {
 @MainActor
 private final class ArrivalStudioState: ObservableObject {
     enum Surface { case preview, inbox, hidden }
-    @Published var variant: ArrivalStudioVariant = .queuePeek
+    @Published var variant: ArrivalStyle = .queuePeek
     @Published var scenario: ArrivalStudioScenario = .single
     @Published var appearance: ArrivalStudioAppearance = .light
     @Published var isHovering = false
@@ -151,7 +129,7 @@ private final class ArrivalStudioState: ObservableObject {
         }
     }
 
-    func applyScenario() { arrival.content = scenario.content }
+    func applyScenario() { arrival.style = variant; arrival.content = scenario.content }
 }
 
 @MainActor
@@ -485,23 +463,13 @@ private struct ArrivalStudioPreview: View {
     @ObservedObject var state: ArrivalStudioState
 
     var body: some View {
-        Group {
-            switch state.variant {
-            case .queuePeek:
-                ArrivalView(
-                    model: state.arrival,
-                    open: { _ in state.onOpen?() },
-                    dismiss: { state.onDismiss?() },
-                    hover: { state.onHover?($0) }
-                )
-            case .compactToast:
-                CompactToastAlternative(content: state.arrival.content, open: { state.onOpen?() })
-            case .queueShelf:
-                QueueShelfAlternative(content: state.arrival.content, open: { state.onOpen?() })
-            }
-        }
+        ArrivalSurface(
+            model: state.arrival,
+            open: { _ in state.onOpen?() },
+            dismiss: { state.onDismiss?() },
+            hover: { state.onHover?($0) }
+        )
         .frame(width: state.variant.size.width, height: state.variant.size.height)
-        .onHover { state.onHover?($0) }
     }
 }
 
@@ -523,7 +491,7 @@ private struct ArrivalStudioControls: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Picker("Design", selection: $state.variant) {
-                ForEach(ArrivalStudioVariant.allCases) { Text($0.title).tag($0) }
+                ForEach(ArrivalStyle.allCases) { Text($0.title).tag($0) }
             }
             Picker("Scenario", selection: $state.scenario) {
                 ForEach(ArrivalStudioScenario.allCases) { Text($0.title).tag($0) }
@@ -556,72 +524,4 @@ private struct ArrivalStudioControls: View {
     }
 }
 
-private struct CompactToastAlternative: View {
-    let content: ArrivalContent
-    let open: () -> Void
-
-    var body: some View {
-        Button(action: open) {
-            HStack(spacing: 12) {
-                Image(systemName: "tray.full.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(width: 28, height: 28)
-                    .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(content.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(content.waitingCount == 1 ? "1 waiting" : "\(content.waitingCount) waiting")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
-                    }
-                    Text(content.message).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
-                }
-            }
-            .padding(.horizontal, 14)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(content.title). \(content.message). \(content.waitingCount) waiting. Open notifications.")
-    }
-}
-
-private struct QueueShelfAlternative: View {
-    let content: ArrivalContent
-    let open: () -> Void
-
-    var body: some View {
-        Button(action: open) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text(content.group.isEmpty ? "Notification" : content.group)
-                        .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                    Spacer()
-                    Text(content.newCount > 1 ? "+\(content.newCount) new" : "New")
-                        .font(.system(size: 11, weight: .semibold))
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(content.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                    Text(content.message).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2)
-                }
-                HStack(spacing: 7) {
-                    Circle().frame(width: 5, height: 5)
-                    Text(content.waitingCount == 1 ? "1 item stays in your inbox" : "\(content.waitingCount) items stay in your inbox")
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
-                    Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(.regularMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(content.title). \(content.message). \(content.waitingCount) waiting. Open notifications.")
-    }
-}
 #endif

@@ -22,6 +22,10 @@ final class ArrivalPresentation {
     private var remaining: TimeInterval = 5
     private var generation = 0
     private let duration: TimeInterval
+    // Changing preferences must never move the target under a held pointer.
+    // Adopt the choice when the next distinct presentation begins.
+    var style: ArrivalStyle = .queuePeek
+    var displayedStyle: ArrivalStyle { model.style }
     var placement: ((NSSize) -> NSRect?)?
     var open: ((String) -> Void)?
 
@@ -74,7 +78,8 @@ final class ArrivalPresentation {
     }
 
     private func present() {
-        guard let frame = placement?(ArrivalView.preferredSize) else { return }
+        model.style = style
+        guard let frame = placement?(style.size) else { return }
         if panel == nil {
             let panel = ArrivalPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             panel.title = "New notification"
@@ -83,10 +88,12 @@ final class ArrivalPresentation {
             panel.level = .statusBar; panel.hidesOnDeactivate = false
             panel.isFloatingPanel = true; panel.acceptsMouseMovedEvents = true
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
-            panel.contentViewController = NSHostingController(rootView: ArrivalView(model: model,
+            let controller = NSHostingController(rootView: ArrivalSurface(model: model,
                 open: { [weak self] id in self?.openDisplayed(id) },
                 dismiss: { [weak self] in self?.dismiss() },
                 hover: { [weak self] in self?.setHovered($0) }))
+            controller.sizingOptions = []
+            panel.contentViewController = controller
             self.panel = panel
             inputMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self, weak panel] event in
                 guard let self, event.window === panel else { return event }
@@ -109,6 +116,8 @@ final class ArrivalPresentation {
         guard let panel else { return }
         generation += 1
         panel.setFrame(frame, display: true)
+        panel.contentView?.setFrameSize(frame.size)
+        panel.contentView?.layoutSubtreeIfNeeded()
         panel.alphaValue = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 1 : 0
         panel.orderFrontRegardless()
         hovered = panel.frame.contains(NSEvent.mouseLocation)

@@ -91,12 +91,13 @@ struct InboxView: View {
                     IconButton(symbol: "xmark", label: "Dismiss Error") { model.error = nil }
                 }.font(.system(size: 12)).padding(12).background(Color.primary.opacity(0.05)).padding(.horizontal, 16).padding(.bottom, 10)
             }
-            if model.authorization == "not-determined" || model.authorization == "denied" {
-                HStack(spacing: 8) {
-                    Image(systemName: "bell.slash").foregroundStyle(.secondary).accessibilityHidden(true)
-                    Text("Saved here. System banners are off.").font(.system(size: 11)).foregroundStyle(.secondary)
-                    Spacer(minLength: 4)
-                    Button("Enable") { model.onEnable?() }.buttonStyle(.plain).font(.system(size: 11, weight: .semibold)).accessibilityLabel("Enable System Notifications")
+            if model.authorization == "not-determined" || model.authorization == "denied" || (["authorized", "provisional"].contains(model.authorization) && !model.systemBannersEnabled) {
+                HStack {
+                    Button { model.onEnable?() } label: {
+                        Label("Turn on macOS banners", systemImage: "bell")
+                    }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .help("Open notification settings for AgentNotify")
+                    Spacer(minLength: 0)
                 }.padding(.horizontal, 20).padding(.bottom, 14)
             }
             if model.visible.isEmpty { emptyState }
@@ -116,13 +117,20 @@ struct InboxView: View {
                     }
                 }
             }
-            if model.undoItem != nil {
-                HStack {
-                    Text("Marked Done").foregroundStyle(.secondary)
+            if let undoItem = model.undoItem {
+                let title = model.items.first(where: { $0.id == undoItem.id })?.title ?? "Notification"
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Completed").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(title.isEmpty ? "Notification" : title).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                    }
                     Spacer()
-                    Button("Undo") { model.undo() }.buttonStyle(.plain).fontWeight(.semibold)
-                    IconButton(symbol: "xmark", label: "Dismiss Undo") { model.undoItem = nil }
-                }.font(.system(size: 12)).padding(.leading, 20).padding(.trailing, 10).padding(.vertical, 5)
+                    Button("Undo completion") { model.undo() }.buttonStyle(QuietButtonStyle())
+                        .help("Return this notification to your inbox")
+                        .accessibilityLabel("Undo completion of \(title)")
+                    IconButton(symbol: "xmark", label: "Hide confirmation") { model.undoItem = nil }
+                }.font(.system(size: 11)).padding(.leading, 20).padding(.trailing, 10).padding(.vertical, 10)
+                    .background(Color.primary.opacity(0.035))
             }
         }
         .frame(minWidth: 360, minHeight: 340)
@@ -141,8 +149,11 @@ struct InboxView: View {
                     Button { model.filter = key; model.selected = nil } label: { if model.filter == key { Label(title, systemImage: "checkmark") } else { Text(title) } }
                 }
             } label: {
-                Text(model.filters.first(where: { $0.0 == model.filter })?.1 ?? "Inbox").font(.system(size: 20, weight: .semibold))
-            }.menuStyle(.borderlessButton).menuIndicator(.visible).fixedSize().accessibilityLabel("Notification Category")
+                HStack(spacing: 8) {
+                    Text(model.filters.first(where: { $0.0 == model.filter })?.1 ?? "Inbox").font(.system(size: 20, weight: .semibold))
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary).accessibilityHidden(true)
+                }
+            }.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Notification Category")
             Text(model.visible.count.formatted()).font(.system(size: 13)).monospacedDigit().foregroundStyle(.secondary).accessibilityLabel("\(model.visible.count) notifications")
             InboxDragRegion().frame(minWidth: 6, maxWidth: .infinity).frame(height: 28)
             IconButton(symbol: "magnifyingglass", label: "Search Notifications") { model.searchVisible.toggle(); searchFocused = model.searchVisible }
@@ -162,7 +173,8 @@ struct InboxView: View {
             IconButton(symbol: model.detached ? "pin.fill" : "pin", label: model.detached ? "Unpin Inbox" : "Pin Inbox") { model.onDetach?() }
             Menu {
                 Button("Close Inbox") { model.onClose?() }
-                Button("Notification Settings…") { model.onEnable?() }
+                Button("Preferences…") { model.onPreferences?() }.disabled(model.onPreferences == nil)
+                Button("System Notification Settings…") { model.onEnable?() }
                 Button("Quit AgentNotify") { model.onQuit?() }
             } label: { Image(systemName: "ellipsis").frame(width: 22, height: 28) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More Options").accessibilityLabel("More Options")
@@ -192,16 +204,14 @@ struct NotificationRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
-                Button {
-                    if item.status == "done" { model.call("status", ["id": item.id, "state": "reopen", "expectedRevision": item.revision]) }
-                    else { model.done(item) }
-                } label: {
-                    Image(systemName: item.status == "done" ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 18, weight: .regular))
-                        .foregroundStyle(item.status == "done" ? .primary : .secondary)
-                        .frame(width: 26, height: 26).contentShape(Rectangle())
-                }.buttonStyle(.plain).help(item.status == "done" ? "Reopen Notification" : "Mark Done")
-                .accessibilityLabel(item.status == "done" ? "Reopen \(item.title)" : "Mark \(item.title) Done")
+                Toggle(isOn: Binding(get: { item.status == "done" }, set: { completed in
+                    if completed { model.done(item) }
+                    else { model.call("status", ["id": item.id, "state": "reopen", "expectedRevision": item.revision]) }
+                })) { Text(item.title) }
+                .toggleStyle(.checkbox).labelsHidden().tint(.primary)
+                .frame(width: 26, height: 26)
+                .help(item.status == "done" ? "Reopen Notification" : "Mark Done")
+                .accessibilityLabel("Completed: \(item.title)")
                 .disabled(["removed", "superseded"].contains(item.status))
                 VStack(alignment: .leading, spacing: 5) {
                     Button { model.select(item) } label: {

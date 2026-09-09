@@ -58,15 +58,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var verificationAnchor: NSRect?
     #endif
     private let model = InboxModel()
+    private let preferencesModel = PreferencesModel()
+    private var preferencesWindow: PreferencesWindowController?
     func applicationDidFinishLaunching(_ notification: Notification) {
         do {
             let service = NotifyService(store: try Store(paths: NotifyPaths()))
             let server = try SocketServer(paths: service.store.paths, handler: service.handle)
             self.service = service; self.server = server; model.service = service
+            preferencesModel.service = service
+            preferencesModel.onChange = { [weak self] preferences in self?.arrivals.style = preferences.arrivalStyle }
+            preferencesModel.refresh()
+            service.onPreferencesChange = { [weak self] in DispatchQueue.main.async { self?.preferencesModel.refresh() } }
+            service.onShowPreferences = { [weak self] in DispatchQueue.main.async { self?.showPreferences() } }
             let native = NativeNotifications(service: service); self.native = native
             native.onAuthorization = { [weak self] in
                 self?.model.authorization = $0
+                self?.model.systemBannersEnabled = self?.native?.bannersEnabled ?? false
                 self?.presentPendingArrivals()
+            }
+            native.observeSettings { [weak self] in
+                self?.inboxIsVisible == true || self?.preferencesWindow?.window?.isVisible == true
             }
             // Seed before timers or clients can create a new event. Existing
             // active rows remain waiting without replaying them as arrivals.
@@ -81,6 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             model.onDetach = { [weak self] in self?.toggleDetached() }
             model.onClose = { [weak self] in self?.closeSurface() }
             model.onEnable = { [weak self] in self?.native?.enable() }
+            model.onPreferences = { [weak self] in self?.showPreferences() }
             model.onQuit = { NSApplication.shared.terminate(nil) }
             model.onChangeCount = { [weak self] count in self?.updateStatus(count) }
             model.onOpenArrivals = { [weak self] in
@@ -185,7 +197,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func arrivalFrame(_ size: NSSize) -> NSRect? {
         guard let anchor = menuBarAnchor else { return nil }
         arrivalAnchor = anchor.rect
-        let size = NSSize(width: inboxSize.width, height: size.height)
+        let size = NSSize(width: arrivals.style == .compactToast ? size.width : inboxSize.width, height: size.height)
         // Sample the safe menu anchor once per appearance. No auto-hide
         // tracking: a visible arrival stays still, just like the full inbox.
         let screen = anchor.screen.visibleFrame
@@ -195,15 +207,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         return NSRect(x: x, y: max(screen.minY + 8, top - size.height), width: size.width, height: size.height)
     }
     @objc private func toggle() { if popover.isShown || panel?.isVisible == true { closeSurface() } else { show() } }
+    private func showPreferences() {
+        if !model.detached { closeSurface() }
+        if preferencesWindow == nil { preferencesWindow = PreferencesWindowController(model: preferencesModel) }
+        preferencesWindow?.present()
+        native?.refreshSettings()
+        if let window = preferencesWindow?.window { offerShimSetup(in: window) }
+    }
+    private func offerShimSetup(in window: NSWindow) {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["AGENTNOTIFY_SELF_CHECK_DIR"] != nil { return }
+        #endif
+        preferencesModel.offerShimSetup(in: window) { [weak self] in
+            self?.showPreferences(); self?.preferencesModel.installShim()
+        }
+    }
     func show() {
         arrivals.dismiss()
         pendingArrivalIDs.removeAll()
         if !inboxIsVisible { model.arrivalIDs.removeAll() }
-        native?.refreshSettings(retryDenied: true); model.refresh()
+        model.refresh()
         let wasVisible = usesPanel ? panel?.isVisible == true : popover.isShown
         if usesPanel {
             panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
             if !wasVisible { clearOpeningFocus(); startHoverDismissal() }
+            native?.refreshSettings(retryDenied: true)
+            if let window = panel { offerShimSetup(in: window) }
             return
         }
         if !wasVisible {
@@ -218,6 +247,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             clearOpeningFocus()
             startHoverDismissal()
         }
+        native?.refreshSettings(retryDenied: true)
+        if let window = controller.view.window { offerShimSetup(in: window) }
     }
     private func startHoverDismissal() {
         guard !model.detached, let window = controller.view.window else { return }

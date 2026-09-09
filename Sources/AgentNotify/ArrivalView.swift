@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import NotifyCore
 
 struct ArrivalContent: Equatable {
     var id: String
@@ -13,6 +14,7 @@ struct ArrivalContent: Equatable {
 
 final class ArrivalViewModel: ObservableObject {
     @Published var content: ArrivalContent
+    @Published var style: ArrivalStyle = .queuePeek
 
     init(content: ArrivalContent) {
         self.content = content

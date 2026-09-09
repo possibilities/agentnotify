@@ -16,6 +16,9 @@ final class Database {
         try run("CREATE TABLE IF NOT EXISTS changes (seq INTEGER PRIMARY KEY AUTOINCREMENT, notification_id TEXT NOT NULL, kind TEXT NOT NULL, json TEXT NOT NULL)")
         try run("CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY, fingerprint TEXT NOT NULL, result TEXT NOT NULL)")
         try run("CREATE TABLE IF NOT EXISTS waiters (notification_id TEXT PRIMARY KEY, token TEXT NOT NULL, expires REAL NOT NULL)")
+        // Additive to v1: earlier binaries leave these local preferences intact.
+        try run("CREATE TABLE IF NOT EXISTS preferences (id INTEGER PRIMARY KEY CHECK(id=1), json TEXT NOT NULL)")
+        try run("CREATE TABLE IF NOT EXISTS app_setup (key TEXT PRIMARY KEY)")
         try run("PRAGMA user_version=1")
     }
     deinit { sqlite3_close(db) }

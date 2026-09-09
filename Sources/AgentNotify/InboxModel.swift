@@ -15,12 +15,14 @@ final class InboxModel: ObservableObject {
     @Published var presentedAsPanel = false
     @Published var searchVisible = false
     @Published var authorization = "checking"
+    @Published var systemBannersEnabled = true
     @Published var arrivalIDs: [String] = []
     @Published var error: String?
     @Published var undoItem: (id: String, revision: Int)?
     var service: NotifyService?
     var onDetach: (() -> Void)?
     var onEnable: (() -> Void)?
+    var onPreferences: (() -> Void)?
     var onClose: (() -> Void)?
     var onQuit: (() -> Void)?
     var onChangeCount: ((Int) -> Void)?

@@ -45,4 +45,9 @@ run("ArrivalChecks.testFutureScheduleStaysSilentUntilDurableDueChange") { try Ar
 run("ArrivalChecks.testDueSnoozedTaskCanArriveWithExistingResponse") { try ArrivalChecks().testDueSnoozedTaskCanArriveWithExistingResponse() }
 run("ArrivalChecks.testReopenAndResolvedOrHiddenChangesStaySilent") { try ArrivalChecks().testReopenAndResolvedOrHiddenChangesStaySilent() }
 run("ArrivalChecks.testCursorGapFailsWithoutAdvancing") { try ArrivalChecks().testCursorGapFailsWithoutAdvancing() }
+run("preferences.persistence_and_isolation") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.persistenceAndIsolation() }
+run("preferences.conflicts_and_replay") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.conflictsAndReplay() }
+run("preferences.concurrent_clients_and_service_routing") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.concurrentClientsAndServiceRouting() }
+run("shim.offer_durability_and_missing_installer") { let suite = ShimChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.offerDurabilityAndUnavailableInstaller() }
+run("shim.owner_delegation_and_detection") { let suite = ShimChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.installerDelegationAndDetection() }
 print("\(checks) core checks passed.")

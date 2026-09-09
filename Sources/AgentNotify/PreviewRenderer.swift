@@ -33,8 +33,27 @@ enum PreviewRenderer {
             try capture(window, output.appendingPathComponent("\(theme)-detached.png"), width: 440, height: 680)
             model.filter = "all"; model.searchVisible = true; model.query = "no matching notification"
             try capture(window, output.appendingPathComponent("\(theme)-empty-search.png"), width: 360, height: 500)
+            model.filter = "inbox"; model.searchVisible = false; model.query = ""
+            if let item = model.visible.first {
+                model.done(item)
+                try capture(window, output.appendingPathComponent("\(theme)-completion.png"), width: 440, height: 610)
+                model.undo()
+            }
         }
         window.close()
+        let preferences = PreferencesModel()
+        preferences.service = model.service
+        let preferencesWindow = PreferencesWindowController(model: preferences)
+        for theme in ["light", "dark"] {
+            preferencesWindow.window?.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
+            for style in ArrivalStyle.allCases {
+                preferences.select(style)
+                if let window = preferencesWindow.window {
+                    try capture(window, output.appendingPathComponent("\(theme)-preferences-\(style.rawValue).png"), width: 512, height: 560)
+                }
+            }
+        }
+        preferencesWindow.close()
         stdout("Rendered native inbox views to \(output.path)\n")
     }
     static func capture(_ window: NSWindow, _ destination: URL, width: CGFloat, height: CGFloat) throws {

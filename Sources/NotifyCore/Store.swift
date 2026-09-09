@@ -20,6 +20,15 @@ public final class Store {
         lock.lock(); defer { lock.unlock() }
         return Int(try db.rows("SELECT COALESCE(MAX(seq),0) FROM changes")[0][0]) ?? 0
     }
+    public func preferences() throws -> AppPreferences {
+        lock.lock(); defer { lock.unlock() }
+        guard let row = try db.rows("SELECT json FROM preferences WHERE id=1").first else { return AppPreferences() }
+        return try JSONDecoder().decode(AppPreferences.self, from: Data(row[0].utf8))
+    }
+    public func shimPromptHandled() throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return try !db.rows("SELECT key FROM app_setup WHERE key='terminal-notifier-offer'").isEmpty
+    }
     private func save(_ item: NotificationRecord, kind: String) throws {
         let json = String(decoding: try JSONEncoder().encode(item), as: UTF8.self)
         try db.run("INSERT INTO notifications(id,group_name,created,updated,status,json) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET group_name=excluded.group_name,updated=excluded.updated,status=excluded.status,json=excluded.json", [item.id, item.group, String(item.createdAt), String(item.updatedAt), item.status, json])
@@ -44,6 +53,22 @@ public final class Store {
     }
     private func dispatch(_ method: String, _ p: [String: Any], _ now: Double) throws -> [String: Any] {
         switch method {
+        case "dismissShimSetup":
+            try db.run("INSERT OR IGNORE INTO app_setup(key) VALUES('terminal-notifier-offer')")
+            return ["promptHandled": true]
+        case "preferences": return try JSON.encode(preferences())
+        case "setPreferences":
+            var current = try preferences()
+            if let expected = p["expectedRevision"] as? Int, expected != current.revision {
+                throw NotifyError("revision_conflict", "Preferences changed. Read preferences and retry with their current revision.")
+            }
+            let style = ArrivalStyle(rawValue: p["arrivalStyle"] as! String)!
+            if current.arrivalStyle != style {
+                current.arrivalStyle = style
+                current.revision += 1
+                try db.run("INSERT INTO preferences(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json", [JSON.string(try JSON.encode(current))])
+            }
+            return try JSON.encode(current)
         case "send": return try send(p, now)
         case "heartbeat":
             let id = p["id"] as! String, token = p["waiterId"] as! String

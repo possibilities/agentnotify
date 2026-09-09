@@ -2,7 +2,7 @@
 
 `agentnotify guide --json` is the authoritative operation/parameter contract. `agentnotify --help` and MCP schemas derive from the same catalog.
 
-Operations: send, list, get, status, respond, remove, changes, diagnose, show, heartbeat. Modern CLI flags match parameter names (`--actionIndex`, `--expectedRevision`, `--requestId`). An actions value is a JSON string array. The legacy `-action` spelling remains repeatable and comma-separated.
+Operations: send, list, get, status, respond, remove, changes, diagnose, show, heartbeat, preferences, setPreferences, showPreferences, shimStatus, installShim, dismissShimSetup. Modern CLI flags match parameter names (`--actionIndex`, `--expectedRevision`, `--requestId`). An actions value is a JSON string array. The legacy `-action` spelling remains repeatable and comma-separated.
 
 `show detached:true` pins the inbox; `detached:false` unpins it while retaining any manual placement and keeping the menu-bar triangle hidden. Omit `detached` to preserve pin state. After an unpinned inbox closes, a fresh opening returns to the anchored popover.
 
@@ -25,3 +25,13 @@ Notifications include UUID id, content, ordered actions, optional callbacks, cre
 A legacy CLI send adds waiterId and renews heartbeat every second. Heartbeats extend a five-second lease without changing the record revision or adding a change event. Expiry records interruption and disables stale controls. API/MCP callers normally omit waiterId and consume responses asynchronously. A heartbeat is not a read receipt or response acknowledgment.
 
 The MCP uses newline JSON-RPC over stdio, initialize/ping/tools/list/tools/call, typed schemas, tool annotations, and structured envelopes alongside text content. It negotiates 2024-11-05, 2025-03-26, and 2025-06-18. No private per-harness registry or alternate lifecycle exists.
+
+## App preferences
+
+`preferences` returns `{arrivalStyle, revision}`; a new store returns `queue-peek` at revision 1. `setPreferences` accepts `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`), optional `expectedRevision`, and optional `requestId`. Writes are durable and transactional. A stale revision fails; identical request retries return their original result. A same-style write does not increase the revision. Preferences are local to this inbox service and separate from the notification change feed; clients reread `preferences` to refresh their settings.
+
+`showPreferences` opens the native Preferences window and returns `native_unavailable` for a headless service. All three operations are available through the CLI, Unix socket, and stdio MCP. AgentStart’s authenticated fleet and Grok HTTP toolsets expose them as `agentnotify_preferences`, `agentnotify_setPreferences`, and `agentnotify_showPreferences`, alongside the full notification contract.
+
+## Terminal-notifier integration
+
+`shimStatus` returns installed/available booleans, the target and installer paths, and `promptHandled`. `installShim` delegates to the existing `~/code/agentstart/scripts/install-notification-shim` owner, then durably handles the setup offer. This requires AgentStart and explicit human intent; it installs the availability router into `~/.local/bin`, preserving the original fallback and refusing foreign commands. It does not edit shell profiles. `dismissShimSetup` durably handles the offer without installation. All three are CLI/socket/MCP peers, emit no notification changes, and remain separate from arrival-style revisions. An isolated `AGENTNOTIFY_STATE_DIR` also isolates the shim destination beneath `<state>/shim-home` to protect the real PATH during tests.

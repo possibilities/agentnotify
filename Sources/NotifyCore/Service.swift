@@ -2,12 +2,15 @@ import Foundation
 
 public final class NotifyService {
     public let store: Store
+    private let shim: NotificationShim
     public var onChange: (() -> Void)?
     public var onShow: ((String?, Bool?) -> Void)?
+    public var onShowPreferences: (() -> Void)?
+    public var onPreferencesChange: (() -> Void)?
     public var nativeInfo: (() -> [String: Any])?
     public var nativeList: ((Bool) throws -> Set<String>)?
     private var timer: DispatchSourceTimer?
-    public init(store: Store) { self.store = store }
+    public init(store: Store, shim: NotificationShim = NotificationShim()) { self.store = store; self.shim = shim }
     public func start() throws {
         try store.recoverEffects()
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
@@ -29,6 +32,20 @@ public final class NotifyService {
     }
     public func call(_ method: String, _ params: [String: Any] = [:]) throws -> [String: Any] {
         try Catalog.validate(method, params)
+        if method == "shimStatus" {
+            var result = shim.status(); result["promptHandled"] = try store.shimPromptHandled(); return result
+        }
+        if method == "installShim" {
+            var result = try shim.install()
+            _ = try store.perform("dismissShimSetup", params: [:])
+            result["promptHandled"] = true
+            onPreferencesChange?()
+            return result
+        }
+        if method == "showPreferences" {
+            guard let onShowPreferences else { throw NotifyError("native_unavailable", "This is a headless service. Open AgentNotify.app to use preferences.") }
+            onShowPreferences(); return ["shown": true]
+        }
         if method == "show" {
             guard let onShow else { throw NotifyError("native_unavailable", "This is a headless service. Open AgentNotify.app to use the inbox.") }
             if let id = params["id"] as? String { _ = try store.get(id) }
@@ -46,7 +63,8 @@ public final class NotifyService {
         if method == "send", nativeInfo == nil, let id = result["id"] as? String { try store.updateDelivery(id: id, state: "inbox-only", error: result["deliveryError"] as? String, registered: false); result = try JSON.encode(store.get(id)) }
         if method == "diagnose" { result["native"] = nativeInfo?() ?? ["available": false, "authorization": "headless", "note": "Durable inbox works; this service does not deliver system notifications."] }
         let claim = result.removeValue(forKey: "effectClaim") as? Bool ?? false
-        if method != "heartbeat", Catalog.operations.first(where: { $0.name == method })?.mutates == true { onChange?() }
+        if ["setPreferences", "dismissShimSetup"].contains(method) { onPreferencesChange?() }
+        else if method != "heartbeat", Catalog.operations.first(where: { $0.name == method })?.mutates == true { onChange?() }
         if claim {
             let item = try JSON.decode(NotificationRecord.self, result)
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in

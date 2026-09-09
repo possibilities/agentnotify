@@ -9,6 +9,9 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
     private var info: [String: Any] = ["available": true, "authorization": "checking"]
     private var authorization: UNAuthorizationStatus = .notDetermined
     private var registering = Set<String>()
+    private var settingsObservation: NotificationSettingsObservation?
+    private var settingsGeneration = 0
+    private var retryDeniedAfterRefresh = false
     var onAuthorization: ((String) -> Void)?
     init(service: NotifyService) {
         self.service = service; super.init(); center.delegate = self
@@ -19,15 +22,36 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
     var usesCompactArrivals: Bool {
         let settings = diagnostics()
         return ArrivalDeliveryPolicy.shouldShowCompact(authorization: settings["authorization"] as? String ?? "checking",
-            alertsEnabled: settings["alerts"] as? Int == UNNotificationSetting.enabled.rawValue)
+            alertsEnabled: bannersEnabled)
+    }
+    var bannersEnabled: Bool {
+        let settings = diagnostics()
+        return ["authorized", "provisional"].contains(settings["authorization"] as? String ?? "")
+            && settings["alerts"] as? Int == UNNotificationSetting.enabled.rawValue
+            && settings["alertStyle"] as? Int != UNAlertStyle.none.rawValue
+    }
+    func observeSettings(whileVisible: @escaping () -> Bool) {
+        settingsObservation?.stop()
+        settingsObservation = NotificationSettingsObservation(shouldPoll: {
+            whileVisible() || NSWorkspace.shared.frontmostApplication?.bundleIdentifier == "com.apple.systempreferences"
+        }, refresh: { [weak self] in self?.refreshSettings() })
+        settingsObservation?.start()
     }
     func refreshSettings(retryDenied: Bool = false) {
+        dispatchPrecondition(condition: .onQueue(.main))
+        settingsObservation?.updatePolling()
+        settingsGeneration += 1
+        let generation = settingsGeneration
+        retryDeniedAfterRefresh = retryDeniedAfterRefresh || retryDenied
         center.getNotificationSettings { settings in
             DispatchQueue.main.async {
+                guard self.settingsGeneration == generation else { return }
+                let retryDenied = self.retryDeniedAfterRefresh
+                self.retryDeniedAfterRefresh = false
                 self.authorization = settings.authorizationStatus
                 let name: String
                 switch settings.authorizationStatus { case .authorized: name = "authorized"; case .denied: name = "denied"; case .provisional: name = "provisional"; case .notDetermined: name = "not-determined"; default: name = "unknown" }
-                self.infoLock.lock(); self.info = ["available": true, "authorization": name, "alerts": settings.alertSetting.rawValue, "sound": settings.soundSetting.rawValue, "notificationCenter": settings.notificationCenterSetting.rawValue, "note": "Accepted delivery does not prove banner visibility; Focus and macOS settings still apply."]; self.infoLock.unlock()
+                self.infoLock.lock(); self.info = ["available": true, "authorization": name, "alerts": settings.alertSetting.rawValue, "alertStyle": settings.alertStyle.rawValue, "sound": settings.soundSetting.rawValue, "notificationCenter": settings.notificationCenterSetting.rawValue, "note": "Accepted delivery does not prove banner visibility; Focus and macOS settings still apply."]; self.infoLock.unlock()
                 self.onAuthorization?(name)
                 if retryDenied && [.authorized, .provisional].contains(settings.authorizationStatus), let items = try? self.service.store.all() {
                     for item in items where item.delivery == "denied" && ["active", "scheduled", "snoozed"].contains(item.status) {
@@ -42,7 +66,9 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
         if authorization != .notDetermined {
             if let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension") { NSWorkspace.shared.open(url) }
         } else {
-            center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in self.refreshSettings(retryDenied: true) }
+            center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in
+                DispatchQueue.main.async { self.refreshSettings(retryDenied: true) }
+            }
         }
     }
     func nativeIDs(pending: Bool) throws -> Set<String> {

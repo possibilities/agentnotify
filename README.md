@@ -9,7 +9,9 @@ scripts/build.sh
 open dist/AgentNotify.app
 ```
 
-Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. When macOS banners are off, new notifications appear in a compact preview beneath the tray for five seconds. Hover to keep it visible; click to read it in the full inbox. Dismissing the preview never completes the task. Enabled macOS banners retain their system sound, actions, and Focus behavior.
+Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. When macOS banners are off, new notifications appear in a compact preview beneath the tray for five seconds. Hover to keep it visible; click to read it in the full inbox. Dismissing the preview never completes the task. Enabled macOS banners retain their system sound, actions, and Focus behavior. More → Preferences lets you choose Queue Peek (default), Compact Toast, or Queue Shelf. Settings persist across restarts; macOS banner changes are detected while you use the app or System Settings.
+
+The first inbox opening offers to install a terminal-notifier shim through AgentStart. Choose Not now to skip it; More → Preferences → Terminal integration keeps an Install shim button for later. An existing fleet shim is recognized automatically. The original notifier stays available as a fallback.
 
 ## Terminal-notifier replacement
 
@@ -49,7 +51,7 @@ The private Unix socket uses newline-delimited JSON:
 {"id":"client-request","method":"list","params":{"filter":"inbox"}}
 ```
 
-Responses echo `id` and carry `{schema_version, ok, data, error}`. See [the API contract](docs/api.md). AgentStart’s shared MCP inventory exposes the same operations to AgentVoice, Codex, and Claude; the shipped `notifications` skill teaches usage.
+Responses echo `id` and carry `{schema_version, ok, data, error}`. See [the API contract](docs/api.md). AgentStart’s shared MCP inventory exposes the same operations to AgentVoice, Codex, and Claude, plus its authenticated fleet and Grok HTTP toolsets; the shipped `notifications` skill teaches usage.
 
 ## Durable behavior
 

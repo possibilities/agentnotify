@@ -4,6 +4,18 @@ import NotifyCore
 
 let args = Array(CommandLine.arguments.dropFirst())
 #if DEBUG
+if args.first == "check-arrivals", args.count == 2 {
+    _ = NSApplication.shared
+    do {
+        let output = URL(fileURLWithPath: args[1])
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let checks = try MainActor.assumeIsolated {
+            try NotificationSettingsChecks.run() + ArrivalPresentationChecks.run(output: output)
+        }
+        try JSON.data(["ok": true, "checks": checks]).write(to: output.appendingPathComponent("arrival-checks.json"))
+        stdout("Native arrival checks passed.\n"); exit(0)
+    } catch { stderr(error.localizedDescription); exit(1) }
+}
 if args.first == "arrival-studio" {
     do { try MainActor.assumeIsolated { try ArrivalStudio.run(selections: Array(args.dropFirst())) }; exit(0) }
     catch { stderr(error.localizedDescription); exit(1) }

@@ -154,17 +154,47 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
             return json.loads(mcp.stdout.readline())
         check(mcp_call(1, 'initialize', {'protocolVersion': '2025-06-18'})['result']['serverInfo']['name'] == 'agentnotify', 'MCP initialize')
         tools = mcp_call(2, 'tools/list')['result']['tools']
-        check({t['name'] for t in tools} == {'send','list','get','status','respond','remove','changes','diagnose','show','heartbeat'}, 'MCP parity catalog')
+        check({t['name'] for t in tools} == {'send','list','get','status','respond','remove','changes','diagnose','show','heartbeat','preferences','setPreferences','showPreferences','shimStatus','installShim','dismissShimSetup'}, 'MCP parity catalog')
         result = mcp_call(3, 'tools/call', {'name': 'send', 'arguments': {'message': 'MCP notice', 'group': 'mcp'}})['result']
         check(not result['isError'] and result['structuredContent']['ok'], 'MCP send')
         bad = mcp_call(4, 'tools/call', {'name': 'send', 'arguments': {'message': False}})['result']
         check(bad['isError'], 'MCP validation parity')
+        preference_cursor = ok('diagnose')['cursor']
+        initial_preferences = ok('preferences')
+        check(initial_preferences == {'arrivalStyle': 'queue-peek', 'revision': 1}, 'default preferences')
+        selected = cli('setPreferences', '--arrivalStyle', 'compact-toast', '--expectedRevision', '1', '--requestId', 'pref-cli')
+        check(selected.returncode == 0 and json.loads(selected.stdout)['data']['arrivalStyle'] == 'compact-toast', 'CLI preference write')
+        read_preferences = mcp_call(5, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
+        check(read_preferences == ok('preferences') and read_preferences['revision'] == 2, 'MCP and socket observe CLI choice')
+        changed = mcp_call(6, 'tools/call', {'name': 'setPreferences', 'arguments': {'arrivalStyle': 'queue-shelf', 'expectedRevision': 2, 'requestId': 'pref-mcp'}})['result']
+        check(not changed['isError'] and changed['structuredContent']['data']['revision'] == 3, 'MCP preference write')
+        check(json.loads(cli('preferences').stdout)['data']['arrivalStyle'] == 'queue-shelf', 'CLI observes MCP choice')
+        check(api('setPreferences', {'arrivalStyle': 'queue-peek', 'expectedRevision': 2})['error']['code'] == 'revision_conflict', 'stale preference revision rejected')
+        check(cli('setPreferences', '--arrivalStyle', 'unknown').returncode == 2, 'invalid preference rejected')
+        check(api('showPreferences')['error']['code'] == 'native_unavailable', 'headless preferences presentation refused')
+        check(ok('diagnose')['cursor'] == preference_cursor, 'preferences do not emit notification changes')
+        check(ok('shimStatus')['promptHandled'] is False, 'shim offer begins pending')
+        shim_path = ok('shimStatus')['path']
+        check('shim-home' in shim_path and shim_path.startswith(tmp), 'shim operations isolate the install destination')
+        handled = mcp_call(7, 'tools/call', {'name': 'dismissShimSetup'})['result']
+        check(not handled['isError'], 'MCP can dismiss shim offer')
+        check(json.loads(cli('shimStatus').stdout)['data']['promptHandled'], 'CLI sees dismissed shim offer')
+        if ok('shimStatus')['available']:
+            installed = cli('installShim')
+            check(installed.returncode == 0 and json.loads(installed.stdout)['data']['installed'], 'CLI installs shim only in disposable destination')
+            observed = mcp_call(8, 'tools/call', {'name': 'shimStatus'})['result']['structuredContent']['data']
+            check(observed['installed'] and observed['path'] == shim_path, 'MCP sees CLI shim installation')
+        else:
+            check(api('installShim')['error']['code'] == 'installer_unavailable', 'missing owner is reported without installation')
+        check(ok('diagnose')['cursor'] == preference_cursor, 'shim setup does not emit notification changes')
         mcp.stdin.close(); mcp.wait(timeout=5)
         # Persisted state and resumable change stream survive a full service restart.
         before = ok('diagnose')
         first = ok('changes', {'after': 0, 'limit': 2})
         check(first['hasMore'] and len(first['changes']) == 2, 'change pagination')
         stop(); start()
+        check(ok('preferences') == {'arrivalStyle': 'queue-shelf', 'revision': 3}, 'preferences survive service restart')
+        check(ok('shimStatus')['promptHandled'], 'shim offer choice survives service restart')
         check(ok('diagnose')['total'] == before['total'], 'durable records after restart')
         check(ok('get', {'id': conflict['id']})['readAt'] is not None, 'durable read state')
         check(ok('changes', {'after': before['cursor']})['changes'] == [], 'stable change cursor')

@@ -45,6 +45,14 @@ Read is separate from done. Reading never executes callbacks. The inbox does not
 
 For concurrent clients, include a unique `requestId` on mutations and reuse it with identical input only for retries. Use the current `expectedRevision` to avoid stale writes. `changes` returns ordered snapshots after a cursor; persist that cursor and drain `hasMore` pages. This is a local multi-client contract, not a deployed mobile sync service.
 
+## Appearance preferences
+
+`preferences` reads the saved arrival design and revision. `setPreferences` accepts `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`), `expectedRevision`, and `requestId`; change it when the human asks. Queue Peek is the default. `showPreferences` opens the native settings window. These operations have the same CLI/socket/MCP contract and do not change notification state.
+
+AgentStart exposes the full MCP in managed Codex, Claude, and AgentVoice sessions and authenticated HTTP fleet/Grok toolsets. HTTP names have the `agentnotify_` prefix, such as `agentnotify_send` and `agentnotify_preferences`; use the tools advertised by the current client. A running stdio session retains its loaded tool catalog until that session ends.
+
+`shimStatus` checks PATH-router setup. Only when the human asks, `installShim` installs the existing AgentStart router in `~/.local/bin`; the original terminal-notifier remains the fallback. `dismissShimSetup` records that the one-time offer was handled without installing. Preferences provides the same opt-in action. Neither command changes shell profiles; `~/.local/bin` must precede the original notifier on PATH. These operations require the fleet installer owner, not a per-agent replacement script.
+
 ## Diagnose and replacement
 
 Run `diagnose` to inspect store counts, app connection, authorization, and delivery state. A denied banner still leaves a durable inbox item. Enable system notifications from the app. `-list ALL` queries native delivered notifications; `list --filter all` includes durable history, including removed and replaced records.

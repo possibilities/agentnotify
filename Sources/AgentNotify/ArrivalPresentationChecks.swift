@@ -62,7 +62,29 @@ enum ArrivalPresentationChecks {
             "Group replacement lost the newest arrival or changed the hovered target.")
         presenter.setHovered(false)
         try require(presenter.displayedID == second.id, "Replacement did not advance after hover.")
-        return ["arrival does not activate or take focus", "hover freezes target and pauses expiry", "bursts coalesce and advance on pointer exit", "unattended preview expires", "open passes displayed identity without a durable mutation", "old expiry cannot dismiss a new presentation", "withdrawal hides stale presentation", "group replacement preserves both hovered identity and the queued successor"]
+        let sharedPanel = presenter.panel
+        for style in ArrivalStyle.allCases {
+            presenter.dismiss()
+            presenter.style = style
+            presenter.receive([first], items: [first, second])
+            presenter.setHovered(true)
+            settle(0.03)
+            try require(presenter.displayedStyle == style && presenter.panel?.frame.size == style.size, "Arrival style has the wrong renderer or dimensions.")
+            try require(presenter.panel === sharedPanel && presenter.panel?.canBecomeKey == false, "Switching styles replaced the panel or allowed focus.")
+            let frame = presenter.panel?.frame
+            let next: ArrivalStyle = style == .queuePeek ? .compactToast : .queuePeek
+            presenter.style = next
+            presenter.receive([second], items: [first, second])
+            try require(presenter.displayedStyle == style && presenter.panel?.frame == frame && presenter.displayedID == first.id,
+                "Changing preference moved or replaced the hovered arrival.")
+            if let panel = presenter.panel { try PreviewRenderer.capture(panel, output.appendingPathComponent("native-arrival-\(style.rawValue).png"), width: style.size.width, height: style.size.height) }
+            presenter.openDisplayed(first.id)
+            try require(opened == first.id && !presenter.isVisible, "A styled arrival opened the wrong notification.")
+            presenter.receive([second], items: [first, second])
+            try require(presenter.displayedStyle == next, "The next arrival did not adopt the saved preference.")
+        }
+        try require(try store.cursor() == cursor, "Style preferences mutated notification state.")
+        return ["arrival does not activate or take focus", "hover freezes target and pauses expiry", "bursts coalesce and advance on pointer exit", "unattended preview expires", "open passes displayed identity without a durable mutation", "old expiry cannot dismiss a new presentation", "withdrawal hides stale presentation", "group replacement preserves both hovered identity and the queued successor", "all three designs share one nonactivating panel at their intended dimensions", "preference changes preserve the active target and apply to the next presentation"]
     }
 }
 #endif
