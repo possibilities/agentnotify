@@ -208,8 +208,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let panel = self.panel ?? InboxPanel(contentRect: NSRect(origin: .zero, size: inboxSize), styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
             panel.title = "Notifications"
             panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
-            // The header owns dragging; AppKit background dragging must not
-            // compete with its screen-coordinate movement.
+            // Explicit drag surfaces own movement; AppKit background dragging
+            // must not compete with their screen-coordinate movement.
             panel.isMovableByWindowBackground = false; panel.isReleasedWhenClosed = false; panel.level = .floating
             panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

@@ -91,14 +91,18 @@ struct InboxView: View {
             if model.visible.isEmpty { emptyState }
             else {
                 ScrollViewReader { proxy in
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(model.visible) { item in
-                                NotificationRow(item: item, model: model).id(item.id)
-                            }
-                        }.padding(.horizontal, 8).padding(.bottom, 12)
+                    GeometryReader { geometry in
+                        ScrollView {
+                            LazyVStack(spacing: 0) {
+                                ForEach(model.visible) { item in
+                                    NotificationRow(item: item, model: model).id(item.id)
+                                }
+                            }.padding(.horizontal, 8).padding(.bottom, 12)
+                            .frame(minHeight: geometry.size.height, alignment: .top)
+                            .background { if model.presentedAsPanel { InboxDragRegion() } }
+                        }
+                        .onChange(of: model.selected) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
                     }
-                    .onChange(of: model.selected) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
                 }
             }
             if model.undoItem != nil {
@@ -111,6 +115,8 @@ struct InboxView: View {
             }
         }
         .frame(minWidth: 360, minHeight: 340)
+        // Behind content: blank space drags, controls and text keep their input.
+        .background { if model.presentedAsPanel { InboxDragRegion() } }
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: model.presentedAsPanel ? InboxPanel.cornerRadius : 0, style: .continuous))
         .tint(.primary)
