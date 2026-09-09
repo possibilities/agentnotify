@@ -20,6 +20,8 @@ Pinning preserves the content's screen coordinates and the toolbar's control pos
 
 Opening a panel does not automatically focus the category menu. Pointer input clears control focus while preserving an active text editor. Tab and keyboard menu navigation retain native focus indication; VoiceOver retains native focus behavior. Do not suppress every focus ring to make a surface quieter.
 
+An unpinned popover stays open under the pointer. After the pointer leaves the popover and tray icon, it dismisses after one second; returning cancels the countdown. Opening from the CLI or API does not start a countdown until the pointer has visited. Native menus pause dismissal, while text editing, keyboard navigation, and VoiceOver keep it open. A pinned panel never dismisses on pointer exit. This uses pointer enter/exit events and a one-shot delay, with no position tracking.
+
 ## References and verification
 
 [Vercel design.md](https://vercel.com/design.md) supplies transferable composition and restraint guidance, not Vercel branding for this app. [Web Interface Guidelines](https://vercel.com/design/guidelines) inform native keyboard, focus, label, contrast, and state handling. The wiki’s “Vercel design guidance for native fleet apps” records the adaptation and links the fleet’s chromeless guidance.

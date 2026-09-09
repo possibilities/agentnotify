@@ -18,6 +18,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var focusMonitor: Any?
     private var anchorWindow: NSWindow?
     private var inboxSize = NSSize(width: 440, height: 610)
+    private lazy var hoverDismissal = PopoverDismissal(
+        containsPointer: { [weak self] in
+            guard let self else { return false }
+            let point = NSEvent.mouseLocation
+            return self.controller.view.window?.frame.contains(point) == true || self.statusScreenFrame?.contains(point) == true
+        },
+        allowsDismissal: { [weak self] in
+            guard let self else { return false }
+            return self.popover.isShown && !self.model.detached && !NSWorkspace.shared.isVoiceOverEnabled
+                && !(self.controller.view.window?.firstResponder is NSTextView)
+        },
+        dismiss: { [weak self] in self?.popover.performClose(nil) }
+    )
     #if DEBUG
     private var verificationAnchor: NSRect?
     #endif
@@ -90,7 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         popover.contentViewController?.view.window?.makeKey()
         NSApp.activate(ignoringOtherApps: true)
-        if !wasVisible { clearOpeningFocus() }
+        if !wasVisible {
+            clearOpeningFocus()
+            if let window = controller.view.window { hoverDismissal.start(window: window, statusButton: statusItem.button) }
+        }
     }
     private func clearOpeningFocus() {
         if !NSWorkspace.shared.isVoiceOverEnabled, !model.searchVisible { controller.view.window?.makeFirstResponder(nil) }
@@ -99,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if model.detached { panel?.orderOut(nil) } else { popover.performClose(nil) }
     }
     func popoverDidClose(_ notification: Notification) {
+        hoverDismissal.stop()
         anchorWindow?.orderOut(nil)
     }
     private func configurePopover() {
@@ -233,16 +250,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             if let selected = model.visible.first { model.select(selected); try require(try service?.store.get(selected.id).readAt != nil, "Opening details failed to persist read state.") }
             toggleDetached(); settle()
             if let panel, let content = contentScreenFrame { try PreviewRenderer.capture(panel, directory.appendingPathComponent("native-detached.png"), width: content.width, height: content.height) }
+            guard let panel else { throw NotifyError("internal_error", "No panel for hover checks.") }
+            let hoverChecks = try PopoverDismissalChecks.run(window: panel)
             toggleDetached(); settle()
             closeSurface()
             try require(!popover.isShown && anchorWindow?.isVisible != true, "Closing left the popover or positioning window visible.")
             let result: [String: Any] = ["ok": true, "checks": ["hidden and negative-coordinate menu anchors", "notched display safe top edge", "popover stays on display", "four pin/unpin cycles preserve content coordinates", "both surfaces stay still across revealed/contracted menu geometry and repeated show", "pinned window configured to persist across app deactivation", "shared content survives transitions", "closing hides the positioning window"], "frames": frames, "notifications": model.items.count]
-            try JSON.data(result).write(to: directory.appendingPathComponent("native-panel-check.json"))
+            try JSON.data(result.merging(["hoverChecks": hoverChecks]) { _, new in new }).write(to: directory.appendingPathComponent("native-panel-check.json"))
             NSApp.terminate(nil)
         } catch { stderr("Native panel check failed: \(error.localizedDescription)"); exit(1) }
     }
     #endif
     func applicationWillTerminate(_ notification: Notification) {
+        hoverDismissal.stop()
         if let focusMonitor { NSEvent.removeMonitor(focusMonitor) }
         server?.stop(); service?.stop()
     }
