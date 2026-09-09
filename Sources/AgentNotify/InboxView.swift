@@ -176,7 +176,6 @@ struct InboxView: View {
             Menu {
                 Button("Close Inbox") { model.onClose?() }
                 Button("Preferences…") { model.onPreferences?() }.disabled(model.onPreferences == nil)
-                Button("System Notification Settings…") { model.onEnable?() }
                 Button("Quit AgentNotify") { model.onQuit?() }
             } label: { Image(systemName: "ellipsis").frame(width: 22, height: 28) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More Options").accessibilityLabel("More Options")
