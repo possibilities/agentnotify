@@ -32,7 +32,6 @@ private struct InboxDragRegion: NSViewRepresentable {
         }
         override func mouseDragged(with event: NSEvent) {
             guard let panel = window as? InboxPanel, let start = dragStart else { return }
-            panel.onDrag?()
             let pointer = panel.convertPoint(toScreen: event.locationInWindow)
             panel.setFrameOrigin(NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + pointer.y - start.pointer.y))
         }

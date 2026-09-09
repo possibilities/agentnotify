@@ -3,12 +3,11 @@ import SwiftUI
 import NotifyCore
 
 final class InboxPanel: NSPanel {
-    var onDrag: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSWindowDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var statusItem: NSStatusItem!
     private var popover = NSPopover()
     private var panel: InboxPanel?
@@ -17,15 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     private var service: NotifyService?
     private var native: NativeNotifications?
     private var focusMonitor: Any?
-    private var anchorTimer: Timer?
     private var anchorWindow: NSWindow?
-    private var pinnedAnchor: NSRect?
-    private var followsAnchor = false
-    private var positioningPanel = false
-    private var changingSurface = false
     private var inboxSize = NSSize(width: 440, height: 610)
     #if DEBUG
-    private var geometryTimer: Timer?
     private var verificationAnchor: NSRect?
     #endif
     private let model = InboxModel()
@@ -65,9 +58,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             try service.start(); server.start(); native.refreshSettings(); model.refresh()
             if ProcessInfo.processInfo.environment["AGENTNOTIFY_PREVIEW"] == "1" { show() }
             #if DEBUG
-            if let output = ProcessInfo.processInfo.environment["AGENTNOTIFY_GEOMETRY_FILE"], ProcessInfo.processInfo.environment["AGENTNOTIFY_STATE_DIR"] != nil {
-                geometryTimer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in self?.writeGeometry(output) }
-            }
             if let output = ProcessInfo.processInfo.environment["AGENTNOTIFY_SELF_CHECK_DIR"], ProcessInfo.processInfo.environment["AGENTNOTIFY_STATE_DIR"] != nil {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.verifyPanel(output) }
             }
@@ -90,13 +80,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         let wasVisible = model.detached ? panel?.isVisible == true : popover.isShown
         if model.detached {
             panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
-            startAnchorTracking()
             if !wasVisible { clearOpeningFocus() }
             return
         }
-        guard let anchor = updatePopoverAnchor(), let anchorView = anchor.contentView else { return }
-        anchor.orderFront(nil)
-        popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+        if !wasVisible {
+            guard let anchor = updatePopoverAnchor(), let anchorView = anchor.contentView else { return }
+            anchor.orderFront(nil)
+            popover.show(relativeTo: anchorView.bounds, of: anchorView, preferredEdge: .minY)
+        }
         popover.contentViewController?.view.window?.makeKey()
         NSApp.activate(ignoringOtherApps: true)
         if !wasVisible { clearOpeningFocus() }
@@ -106,11 +97,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     }
     private func closeSurface() {
         if model.detached { panel?.orderOut(nil) } else { popover.performClose(nil) }
-        stopAnchorTracking()
     }
     func popoverDidClose(_ notification: Notification) {
         anchorWindow?.orderOut(nil)
-        if !changingSurface { stopAnchorTracking() }
     }
     private func configurePopover() {
         // A popover caches its positioning window and content frame. Never
@@ -155,41 +144,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
         if anchorWindow?.frame != anchor.rect { anchorWindow?.setFrame(anchor.rect, display: false) }
         return anchorWindow
     }
-    private func startAnchorTracking() {
-        guard model.detached, anchorTimer == nil else { return }
-        // Only the pinned panel follows auto-hide. The transient popover keeps
-        // the positioning window where it was when the popover opened.
-        anchorTimer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.followMenuBar() }
-        anchorTimer?.tolerance = 0.025
-        if let anchorTimer { RunLoop.main.add(anchorTimer, forMode: .common) }
-    }
-    private func stopAnchorTracking() { anchorTimer?.invalidate(); anchorTimer = nil }
     private func placePanelContent(at target: NSRect) {
         guard let panel else { return }
-        positioningPanel = true
-        defer { positioningPanel = false }
         panel.setContentSize(target.size)
         controller.view.layoutSubtreeIfNeeded()
         guard let actual = contentScreenFrame else { return }
         panel.setFrameOrigin(NSPoint(x: panel.frame.minX + target.minX - actual.minX, y: panel.frame.minY + target.minY - actual.minY))
     }
-    private func followMenuBar() {
-        guard model.detached, followsAnchor, panel?.isVisible == true, let anchor = menuBarAnchor, let previous = pinnedAnchor, let content = contentScreenFrame else { return }
-        let current = anchor.rect
-        pinnedAnchor = current
-        if current != previous {
-            let target = content.offsetBy(dx: current.midX - previous.midX, dy: current.minY - previous.minY)
-            placePanelContent(at: InboxGeometry.contained(target, in: anchor.screen.visibleFrame))
-        }
-    }
-    func windowDidMove(_ notification: Notification) {
-        if !positioningPanel, NSApp.currentEvent?.type == .leftMouseDragged { followsAnchor = false }
-    }
     private func toggleDetached() {
-        changingSurface = true
-        defer { changingSurface = false }
         if model.detached {
-            stopAnchorTracking(); followsAnchor = false
             if let size = contentScreenFrame?.size { inboxSize = size }
             panel?.orderOut(nil); panel?.contentViewController = nil
             controller.view.removeFromSuperview()
@@ -208,22 +171,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.minSize = NSSize(width: 360, height: 360); panel.maxSize = NSSize(width: 700, height: 1200)
             [.closeButton, .miniaturizeButton, .zoomButton].forEach { panel.standardWindowButton($0)?.isHidden = true }
-            panel.contentViewController = controller; panel.delegate = self
-            panel.onDrag = { [weak self] in self?.followsAnchor = false }
+            panel.contentViewController = controller
             self.panel = panel; model.detached = true
             placePanelContent(at: content)
-            pinnedAnchor = menuBarAnchor?.rect; followsAnchor = true
-            startAnchorTracking()
             panel.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
             clearOpeningFocus()
         }
     }
     #if DEBUG
-    private func writeGeometry(_ output: String) {
-        func rect(_ value: NSRect?) -> String { value.map(NSStringFromRect) ?? "none" }
-        let data: [String: Any] = ["pinned": model.detached, "visible": panel?.isVisible == true, "follows": followsAnchor, "content": rect(contentScreenFrame), "popover": rect(popover.contentViewController?.view.window?.frame), "panel": rect(panel?.frame), "anchor": rect(statusScreenFrame), "effectiveAnchor": rect(menuBarAnchor?.rect), "proxy": rect(anchorWindow?.frame), "statusVisible": statusItem.button?.window?.isVisible == true, "statusOccluded": statusItem.button?.window?.occlusionState.contains(.visible) != true, "menuVisible": NSMenu.menuBarVisible(), "screen": rect(menuBarAnchor?.screen.frame), "visibleScreen": rect(menuBarAnchor?.screen.visibleFrame)]
-        try? JSON.data(data).write(to: URL(fileURLWithPath: output), options: .atomic)
-    }
     private func verifyPanel(_ output: String) {
         do {
             func require(_ condition: Bool, _ message: String) throws {
@@ -244,34 +199,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             settle()
             var frames: [[String: String]] = []
             for _ in 0..<4 {
-                guard let before = contentScreenFrame, let anchorBefore = menuBarAnchor else { throw NotifyError("internal_error", "No initial anchored content.") }
+                guard let before = contentScreenFrame, let screen = menuBarAnchor?.screen, let openingAnchor = anchorWindow?.frame else { throw NotifyError("internal_error", "No initial anchored content.") }
                 try require(popover.isShown && popover.contentViewController === controller, "Popover failed to show its shared content.")
-                try require(anchorBefore.screen.frame.contains(before), "Popover content escaped the display: \(before)")
+                try require(screen.frame.contains(before), "Popover content escaped the display: \(before)")
                 toggleDetached(); settle()
-                guard let pinned = contentScreenFrame, let anchorPinned = menuBarAnchor else { throw NotifyError("internal_error", "No pinned content.") }
-                let expected = before.offsetBy(dx: anchorPinned.rect.midX - anchorBefore.rect.midX, dy: anchorPinned.rect.minY - anchorBefore.rect.minY)
-                try require(near(pinned, expected), "Pin moved content: before \(before), expected \(expected), got \(pinned)")
+                guard let pinned = contentScreenFrame else { throw NotifyError("internal_error", "No pinned content.") }
+                try require(near(pinned, before), "Pin moved content: expected \(before), got \(pinned)")
                 try require(model.detached && panel?.isVisible == true && panel?.contentViewController === controller && !popover.isShown, "Pin lost the shared view.")
                 try require(panel?.hidesOnDeactivate == false && panel?.isFloatingPanel == true, "Pinned panel hides when another app activates.")
                 toggleDetached(); settle()
                 guard let restored = contentScreenFrame, let anchorAfter = menuBarAnchor else { throw NotifyError("internal_error", "No restored popover content.") }
-                let expectedRestore = before.offsetBy(dx: anchorAfter.rect.midX - anchorBefore.rect.midX, dy: anchorAfter.rect.minY - anchorBefore.rect.minY)
+                let expectedRestore = before.offsetBy(dx: anchorAfter.rect.midX - openingAnchor.midX, dy: anchorAfter.rect.minY - openingAnchor.minY)
                 try require(near(restored, expectedRestore), "Unpin moved content: expected \(expectedRestore), got \(restored)")
                 try require(!model.detached && popover.isShown && popover.contentViewController === controller, "Unpin lost the shared view.")
                 frames.append(["before": NSStringFromRect(before), "pinned": NSStringFromRect(pinned), "restored": NSStringFromRect(restored)])
             }
-            // Drive the same real window positioning path with recorded menu
-            // bar states, without changing the person's macOS preferences.
+            // Changing menu geometry and showing an already-visible inbox
+            // must not move either surface or its popover positioning window.
             guard let raw = statusScreenFrame, let screen = menuBarAnchor?.screen else { throw NotifyError("internal_error", "No menu bar for movement checks.") }
             let revealed = NSRect(x: raw.minX, y: screen.frame.maxY - raw.height, width: raw.width, height: raw.height)
             let contracted = revealed.offsetBy(dx: 0, dy: raw.height + 2)
             func moveAnchor(to raw: NSRect?) throws {
-                guard let before = contentScreenFrame, let previous = menuBarAnchor?.rect else { throw NotifyError("internal_error", "No content before menu movement.") }
-                verificationAnchor = raw; followMenuBar(); settle()
-                guard let after = contentScreenFrame, let current = menuBarAnchor?.rect else { throw NotifyError("internal_error", "No content after menu movement.") }
-                let expected = model.detached ? before.offsetBy(dx: current.midX - previous.midX, dy: current.minY - previous.minY) : before
-                try require(near(after, expected), "Menu movement failed (pinned=\(model.detached)): expected \(expected), got \(after)")
-                try require(model.detached || anchorTimer == nil, "Unpinned popover left anchor tracking active.")
+                guard let before = contentScreenFrame, let openingAnchor = anchorWindow?.frame else { throw NotifyError("internal_error", "No content before menu movement.") }
+                verificationAnchor = raw; settle(); show(); settle()
+                guard let after = contentScreenFrame else { throw NotifyError("internal_error", "No content after menu movement.") }
+                try require(near(after, before), "Menu movement shifted the inbox (pinned=\(model.detached)): expected \(before), got \(after)")
+                try require(anchorWindow?.frame == openingAnchor, "An open inbox changed its popover anchor.")
             }
             try moveAnchor(to: revealed); try moveAnchor(to: contracted)
             toggleDetached(); settle()
@@ -282,8 +235,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
             if let panel, let content = contentScreenFrame { try PreviewRenderer.capture(panel, directory.appendingPathComponent("native-detached.png"), width: content.width, height: content.height) }
             toggleDetached(); settle()
             closeSurface()
-            try require(!popover.isShown && anchorTimer == nil && anchorWindow?.isVisible != true, "Closing left an anchor or tracker active.")
-            let result: [String: Any] = ["ok": true, "checks": ["hidden and negative-coordinate menu anchors", "notched display safe top edge", "popover stays on display", "four pin/unpin cycles preserve content coordinates", "only pinned panel follows revealed/contracted menu geometry", "unpinned popover stays still with no anchor timer", "pinned window configured to persist across app deactivation", "shared content survives transitions", "closing stops anchor tracking"], "frames": frames, "notifications": model.items.count]
+            try require(!popover.isShown && anchorWindow?.isVisible != true, "Closing left the popover or positioning window visible.")
+            let result: [String: Any] = ["ok": true, "checks": ["hidden and negative-coordinate menu anchors", "notched display safe top edge", "popover stays on display", "four pin/unpin cycles preserve content coordinates", "both surfaces stay still across revealed/contracted menu geometry and repeated show", "pinned window configured to persist across app deactivation", "shared content survives transitions", "closing hides the positioning window"], "frames": frames, "notifications": model.items.count]
             try JSON.data(result).write(to: directory.appendingPathComponent("native-panel-check.json"))
             NSApp.terminate(nil)
         } catch { stderr("Native panel check failed: \(error.localizedDescription)"); exit(1) }
@@ -291,10 +244,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
     #endif
     func applicationWillTerminate(_ notification: Notification) {
         if let focusMonitor { NSEvent.removeMonitor(focusMonitor) }
-        anchorTimer?.invalidate()
-        #if DEBUG
-        geometryTimer?.invalidate()
-        #endif
         server?.stop(); service?.stop()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
