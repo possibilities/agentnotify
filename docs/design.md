@@ -1,0 +1,23 @@
+# Native notification inbox design
+
+The person opens this panel to decide what still needs attention and take the next action. Content, read state, and completion lead; product identity and transport status do not occupy a rail.
+
+## Visual language
+
+A continuous semantic window surface, SF system typography, and grayscale controls. System appearance selects light and dark automatically. A functional category menu, count, search, filters, and a detach control occupy the top. Notification rows share a title/body/metadata/action alignment without enclosing cards. The selected row gets a subtle surface; every other boundary must earn its space.
+
+Type roles: 20-point semibold category, 13-point semibold titles, 13-point regular body, 11-point metadata. Outer inset 20 points, row inset 10, restrained 6-point control radii, 28-point icon targets. Default popover 440 × 610; the detached panel supports 360–700-point widths. Use semantic colors, never fixed light/dark overrides in production. Relative dates omit ticking seconds.
+
+## Behavior
+
+Inbox, Unread, Later, Done, and All are status views. Search matches title, subtitle, message, and group. Group filtering is exact; time filters use creation time. Long content expands in place. Reading does not complete or execute a callback. Completion offers undo, and a native context/menu surface carries less frequent operations.
+
+One action is a button; multiple actions form an Options menu; a reply expands an inline field. Explicit body callbacks have a distinct Open, Open App, or Run Action control. Their target is inspectable in details. A notification without a supplied action gets no fabricated primary action.
+
+The popover and detached panel reuse one hosting controller and model. Hiding a window never changes task state. API/MCP `show` can select a notification and choose detached presentation.
+
+## References and verification
+
+[Vercel design.md](https://vercel.com/design.md) supplies transferable composition and restraint guidance, not Vercel branding for this app. [Web Interface Guidelines](https://vercel.com/design/guidelines) inform native keyboard, focus, label, contrast, and state handling. The wiki’s “Vercel design guidance for native fleet apps” records the adaptation and links the fleet’s chromeless guidance.
+
+Debug `render-previews` renders the production view in both appearances and narrow empty/search states. The native panel self-check exercises actual popover opening, shared-view detachment, durable read state, reattachment, and closing against an isolated store. These tests do not establish system banner button geometry or permission behavior across macOS releases.
