@@ -4,6 +4,13 @@ import NotifyCore
 
 let args = Array(CommandLine.arguments.dropFirst())
 #if DEBUG
+if args.first == "arrival-studio" {
+    MainActor.assumeIsolated { ArrivalStudio.run() }; exit(0)
+}
+if args.first == "render-arrivals", args.count == 2 {
+    _ = NSApplication.shared
+    do { try MainActor.assumeIsolated { try ArrivalStudio.render(to: args[1]) }; exit(0) } catch { stderr(error.localizedDescription); exit(1) }
+}
 if args.first == "render-previews", args.count == 2 {
     _ = NSApplication.shared
     do { try PreviewRenderer.render(to: args[1]); exit(0) } catch { stderr(error.localizedDescription); exit(1) }

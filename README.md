@@ -9,7 +9,7 @@ scripts/build.sh
 open dist/AgentNotify.app
 ```
 
-Click the tray in the menu bar. Enable system notifications from the panel. The inbox works even when system banners are disabled.
+Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. When macOS banners are off, new notifications appear in a compact preview beneath the tray for five seconds. Hover to keep it visible; click to read it in the full inbox. Dismissing the preview never completes the task. Enabled macOS banners retain their system sound, actions, and Focus behavior.
 
 ## Terminal-notifier replacement
 

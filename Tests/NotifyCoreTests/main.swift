@@ -22,6 +22,9 @@ run("ArgumentsTests.testPipedMessageAndListGrammar") { let suite = ArgumentsTest
 run("ArgumentsTests.testModernTypedArguments") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testModernTypedArguments() }
 run("ArgumentsTests.testScheduleValidation") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testScheduleValidation() }
 run("ArgumentsTests.testCatalogHasMatchingToolSchemas") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; suite.testCatalogHasMatchingToolSchemas() }
+run("arrival_core.compact_fallback") { let suite = ArrivalDeliveryChecks(); suite.testCompactOwnsVisualArrivalWhenNativeAlertsAreUnavailable() }
+run("arrival_core.native_banner") { let suite = ArrivalDeliveryChecks(); suite.testNativeBannerOwnsVisualArrivalWhenEnabled() }
+run("arrival_core.unknown_settings") { let suite = ArrivalDeliveryChecks(); suite.testUnknownSettingsDeferVisualOwnership() }
 run("StoreTests.testReadAndCompletionSurviveReopen") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testReadAndCompletionSurviveReopen() }
 run("StoreTests.testGroupReplacementRetainsAndResolvesEarlierPrompt") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testGroupReplacementRetainsAndResolvesEarlierPrompt() }
 run("StoreTests.testIdempotencyConflictAndNoDuplicateEffects") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testIdempotencyConflictAndNoDuplicateEffects() }
@@ -34,4 +37,12 @@ run("StoreTests.testRepliesAreLiteralAndActionIndexPreservesDuplicateLabels") { 
 run("StoreTests.testBadTypesAndUnknownArgumentsAreRejected") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testBadTypesAndUnknownArgumentsAreRejected() }
 run("StoreTests.testAttachmentsPersistWithoutNativePermission") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testAttachmentsPersistWithoutNativePermission() }
 run("StoreTests.testLargePagesRemainWithinTransportLimit") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testLargePagesRemainWithinTransportLimit() }
+run("ArrivalChecks.testStartupCursorDoesNotReplayBacklog") { try ArrivalChecks().testStartupCursorDoesNotReplayBacklog() }
+run("ArrivalChecks.testFreshArrivalsCoalesceInEventOrderAndReplaySafely") { try ArrivalChecks().testFreshArrivalsCoalesceInEventOrderAndReplaySafely() }
+run("ArrivalChecks.testReadAndDeliveryChangesStaySilent") { try ArrivalChecks().testReadAndDeliveryChangesStaySilent() }
+run("ArrivalChecks.testGroupReplacementEmitsOnlyCreatedReplacement") { try ArrivalChecks().testGroupReplacementEmitsOnlyCreatedReplacement() }
+run("ArrivalChecks.testFutureScheduleStaysSilentUntilDurableDueChange") { try ArrivalChecks().testFutureScheduleStaysSilentUntilDurableDueChange() }
+run("ArrivalChecks.testDueSnoozedTaskCanArriveWithExistingResponse") { try ArrivalChecks().testDueSnoozedTaskCanArriveWithExistingResponse() }
+run("ArrivalChecks.testReopenAndResolvedOrHiddenChangesStaySilent") { try ArrivalChecks().testReopenAndResolvedOrHiddenChangesStaySilent() }
+run("ArrivalChecks.testCursorGapFailsWithoutAdvancing") { try ArrivalChecks().testCursorGapFailsWithoutAdvancing() }
 print("\(checks) core checks passed.")

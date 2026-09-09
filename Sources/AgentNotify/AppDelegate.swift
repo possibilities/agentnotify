@@ -24,6 +24,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var inboxSize = NSSize(width: 440, height: 610)
     private var manuallyPlaced = false
     private var usesPanel: Bool { model.detached || manuallyPlaced }
+    private let arrivals: ArrivalPresentation = {
+        #if DEBUG
+        // A bounded hold for physical gesture inspection in an isolated app.
+        // This is absent from release and cannot affect the person's inbox.
+        if ProcessInfo.processInfo.environment["AGENTNOTIFY_STATE_DIR"] != nil,
+           ProcessInfo.processInfo.environment["AGENTNOTIFY_ARRIVAL_PREVIEW_HOLD"] == "1" {
+            return ArrivalPresentation(duration: 60)
+        }
+        #endif
+        return ArrivalPresentation()
+    }()
+    private var arrivalTracker: ArrivalTracker?
+    private var pendingArrivalIDs: [String] = []
+    private var arrivalAnchor: NSRect?
+    private var openingAnchor: NSRect?
+    private var inboxIsVisible: Bool { popover.isShown || panel?.isVisible == true }
     private lazy var hoverDismissal = PopoverDismissal(
         containsPointer: { [weak self] in
             guard let self else { return false }
@@ -48,8 +64,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let server = try SocketServer(paths: service.store.paths, handler: service.handle)
             self.service = service; self.server = server; model.service = service
             let native = NativeNotifications(service: service); self.native = native
-            native.onAuthorization = { [weak self] in self?.model.authorization = $0 }
-            service.onChange = { [weak self] in DispatchQueue.main.async { self?.model.refresh(); self?.native?.reconcile() } }
+            native.onAuthorization = { [weak self] in
+                self?.model.authorization = $0
+                self?.presentPendingArrivals()
+            }
+            // Seed before timers or clients can create a new event. Existing
+            // active rows remain waiting without replaying them as arrivals.
+            arrivalTracker = ArrivalTracker(cursor: try service.store.cursor())
+            service.onChange = { [weak self] in DispatchQueue.main.async { self?.refreshNotifications() } }
             service.onShow = { [weak self] id, detached in DispatchQueue.main.async {
                 guard let self else { return }
                 self.model.reveal(id)
@@ -61,6 +83,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             model.onEnable = { [weak self] in self?.native?.enable() }
             model.onQuit = { NSApplication.shared.terminate(nil) }
             model.onChangeCount = { [weak self] count in self?.updateStatus(count) }
+            model.onOpenArrivals = { [weak self] in
+                guard let self, let id = self.model.arrivalIDs.last else { return }
+                self.model.arrivalIDs.removeAll()
+                self.model.revealArrival(id)
+                self.model.markRead(id)
+            }
+            arrivals.placement = { [weak self] size in self?.arrivalFrame(size) }
+            arrivals.open = { [weak self] id in
+                // Finish the compact panel's mouse-up before creating a
+                // transient popover, or AppKit can treat it as an outside click.
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    self.openingAnchor = self.arrivalAnchor
+                    defer { self.openingAnchor = nil }
+                    self.model.revealArrival(id)
+                    self.show()
+                    self.model.markRead(id)
+                }
+            }
             controller = NSHostingController(rootView: InboxView(model: model))
             // Pointer input ends control navigation without interrupting text
             // editing. Tab and VoiceOver retain the native focus behavior.
@@ -91,11 +132,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let name = count > 0 ? "tray.fill" : "tray"
         let image = NSImage(systemSymbolName: name, accessibilityDescription: "Notifications")
         image?.isTemplate = true; statusItem?.button?.image = image
-        statusItem?.button?.toolTip = count > 0 ? "\(count) unread notifications" : "Notifications"
-        statusItem?.button?.setAccessibilityLabel(count > 0 ? "Notifications, \(count) unread" : "Notifications")
+        statusItem?.length = count > 0 ? NSStatusItem.variableLength : NSStatusItem.squareLength
+        statusItem?.button?.imagePosition = .imageLeading
+        statusItem?.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        statusItem?.button?.title = count > 0 ? " \(count > 99 ? "99+" : String(count))" : ""
+        let label = count > 0 ? "Notifications, \(count) waiting, \(model.unreadCount) unread" : "Notifications"
+        statusItem?.button?.toolTip = label
+        statusItem?.button?.setAccessibilityLabel(label)
+    }
+    private func refreshNotifications() {
+        guard let service, let tracker = arrivalTracker else { return }
+        do {
+            // Consume committed events rather than diffing broad UI snapshots:
+            // multiple changes (including a complete snooze cycle) can coalesce.
+            var hasMore = true
+            while hasMore {
+                let page = try service.store.perform("changes", params: ["after": tracker.cursor, "limit": 100])
+                let changes = page["changes"] as? [[String: Any]] ?? []
+                let batch = try tracker.consume(changes)
+                for change in changes where change["kind"] as? String == "read" {
+                    if let item = change["notification"] as? [String: Any], let id = item["id"] as? String {
+                        model.arrivalIDs.removeAll { $0 == id }
+                    }
+                }
+                for item in batch {
+                    pendingArrivalIDs.removeAll { $0 == item.id }
+                    pendingArrivalIDs.append(item.id)
+                }
+                hasMore = page["hasMore"] as? Bool ?? false
+            }
+            model.refresh()
+            model.arrivalIDs.removeAll { id in !model.items.contains { $0.id == id && $0.isInbox && $0.presentable } }
+            if pendingArrivalIDs.isEmpty { arrivals.refresh(model.items); native?.reconcile() }
+            else { native?.refreshSettings() }
+        } catch { model.error = "Could not read new notifications. \(error.localizedDescription)" }
+    }
+
+    private func presentPendingArrivals() {
+        guard ["authorized", "provisional", "denied", "not-determined"].contains(model.authorization) else { return }
+        model.refresh()
+        let records = Dictionary(uniqueKeysWithValues: model.items.filter { $0.isInbox && $0.presentable }.map { ($0.id, $0) })
+        let batch = pendingArrivalIDs.compactMap { records[$0] }
+        pendingArrivalIDs.removeAll()
+        if inboxIsVisible {
+            arrivals.dismiss()
+            for item in batch where !model.arrivalIDs.contains(item.id) { model.arrivalIDs.append(item.id) }
+        } else if native?.usesCompactArrivals == true {
+            if !batch.isEmpty { arrivals.receive(batch, items: model.items) }
+        } else { arrivals.dismiss() }
+    }
+
+    private func arrivalFrame(_ size: NSSize) -> NSRect? {
+        guard let anchor = menuBarAnchor else { return nil }
+        arrivalAnchor = anchor.rect
+        let size = NSSize(width: inboxSize.width, height: size.height)
+        // Sample the safe menu anchor once per appearance. No auto-hide
+        // tracking: a visible arrival stays still, just like the full inbox.
+        let screen = anchor.screen.visibleFrame
+        // AppKit's popover frame has a 13-point inset around its content.
+        let x = max(screen.minX + 13, min(anchor.rect.midX - size.width / 2, screen.maxX - size.width - 13))
+        let top = min(anchor.rect.minY - 13, screen.maxY - 8)
+        return NSRect(x: x, y: max(screen.minY + 8, top - size.height), width: size.width, height: size.height)
     }
     @objc private func toggle() { if popover.isShown || panel?.isVisible == true { closeSurface() } else { show() } }
     func show() {
+        arrivals.dismiss()
+        pendingArrivalIDs.removeAll()
+        if !inboxIsVisible { model.arrivalIDs.removeAll() }
         native?.refreshSettings(retryDenied: true); model.refresh()
         let wasVisible = usesPanel ? panel?.isVisible == true : popover.isShown
         if usesPanel {
@@ -124,6 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if !NSWorkspace.shared.isVoiceOverEnabled, !model.searchVisible { controller.view.window?.makeFirstResponder(nil) }
     }
     private func closeSurface() {
+        model.arrivalIDs.removeAll()
         hoverDismissal.stop()
         if usesPanel {
             panel?.orderOut(nil)
@@ -131,6 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         } else { popover.performClose(nil) }
     }
     func popoverDidClose(_ notification: Notification) {
+        model.arrivalIDs.removeAll()
         hoverDismissal.stop()
         anchorWindow?.orderOut(nil)
     }
@@ -166,15 +271,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
     private func updatePopoverAnchor() -> NSWindow? {
         guard let anchor = menuBarAnchor else { return nil }
+        let rect = openingAnchor ?? anchor.rect
         if anchorWindow == nil {
-            let window = NSWindow(contentRect: anchor.rect, styleMask: .borderless, backing: .buffered, defer: false)
+            let window = NSWindow(contentRect: rect, styleMask: .borderless, backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false; window.isOpaque = false
             window.backgroundColor = .clear; window.hasShadow = false; window.ignoresMouseEvents = true
             window.level = .statusBar; window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             window.setAccessibilityElement(false); window.contentView?.setAccessibilityElement(false)
             anchorWindow = window
         }
-        if anchorWindow?.frame != anchor.rect { anchorWindow?.setFrame(anchor.rect, display: false) }
+        if anchorWindow?.frame != rect { anchorWindow?.setFrame(rect, display: false) }
         return anchorWindow
     }
     private func placePanelContent(at target: NSRect) {
@@ -257,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 let expectedRestore = before.offsetBy(dx: anchorAfter.rect.midX - openingAnchor.midX, dy: anchorAfter.rect.minY - openingAnchor.minY)
                 try require(near(restored, expectedRestore), "Unpin moved content: expected \(expectedRestore), got \(restored)")
                 try require(!model.detached && popover.isShown && popover.contentViewController === controller, "Unpin lost the shared view.")
-                frames.append(["before": NSStringFromRect(before), "pinned": NSStringFromRect(pinned), "restored": NSStringFromRect(restored)])
+                frames.append(["before": NSStringFromRect(before), "pinned": NSStringFromRect(pinned), "restored": NSStringFromRect(restored), "arrival": NSStringFromRect(arrivalFrame(ArrivalView.preferredSize) ?? .zero), "anchor": NSStringFromRect(openingAnchor)])
             }
             // Changing menu geometry and showing an already-visible inbox
             // must not move either surface or its popover positioning window.
@@ -296,13 +402,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             toggleDetached(); settle()
             closeSurface()
             try require(!popover.isShown && anchorWindow?.isVisible != true, "Closing left the popover or positioning window visible.")
+            var arrivalGeometry: [[String: String]] = []
+            for x in [screen.frame.minX, screen.frame.maxX - 22] {
+                verificationAnchor = NSRect(x: x, y: screen.frame.maxY - 1, width: 22, height: 1)
+                show(); settle()
+                guard let actual = contentScreenFrame, let compact = arrivalFrame(ArrivalView.preferredSize) else { throw NotifyError("internal_error", "No arrival geometry.") }
+                try require(abs(actual.minX - compact.minX) <= 1 && abs(actual.maxY - compact.maxY) <= 1,
+                    "Arrival and inbox body edges differ: \(compact), \(actual)")
+                arrivalGeometry.append(["inbox": NSStringFromRect(actual), "compact": NSStringFromRect(compact)])
+                closeSurface(); settle()
+            }
+            verificationAnchor = nil
+            let arrivalChecks = try ArrivalPresentationChecks.run(output: directory)
             let result: [String: Any] = ["ok": true, "checks": ["hidden and negative-coordinate menu anchors", "notched display safe top edge", "popover stays on display", "four pin/unpin cycles preserve content coordinates", "both surfaces stay still across revealed/contracted menu geometry and repeated show", "manually placed panel stays in place without a triangle through three pin/unpin cycles", "fresh opening restores the menu-bar popover", "pinned window configured to persist across app deactivation", "shared content survives transitions", "closing hides the positioning window"], "frames": frames, "notifications": model.items.count]
-            try JSON.data(result.merging(["hoverChecks": hoverChecks, "dragChecks": dragChecks]) { _, new in new }).write(to: directory.appendingPathComponent("native-panel-check.json"))
+            try JSON.data(result.merging(["hoverChecks": hoverChecks, "dragChecks": dragChecks, "arrivalChecks": arrivalChecks, "arrivalGeometry": arrivalGeometry]) { _, new in new }).write(to: directory.appendingPathComponent("native-panel-check.json"))
             NSApp.terminate(nil)
         } catch { stderr("Native panel check failed: \(error.localizedDescription)"); exit(1) }
     }
     #endif
     func applicationWillTerminate(_ notification: Notification) {
+        arrivals.dismiss()
         hoverDismissal.stop()
         if let focusMonitor { NSEvent.removeMonitor(focusMonitor) }
         server?.stop(); service?.stop()

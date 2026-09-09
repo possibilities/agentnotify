@@ -16,6 +16,11 @@ final class NativeNotifications: NSObject, UNUserNotificationCenterDelegate {
         service.nativeList = { [weak self] pending in try self?.nativeIDs(pending: pending) ?? [] }
     }
     func diagnostics() -> [String: Any] { infoLock.lock(); defer { infoLock.unlock() }; return info }
+    var usesCompactArrivals: Bool {
+        let settings = diagnostics()
+        return ArrivalDeliveryPolicy.shouldShowCompact(authorization: settings["authorization"] as? String ?? "checking",
+            alertsEnabled: settings["alerts"] as? Int == UNNotificationSetting.enabled.rawValue)
+    }
     func refreshSettings(retryDenied: Bool = false) {
         center.getNotificationSettings { settings in
             DispatchQueue.main.async {

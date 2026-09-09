@@ -58,6 +58,17 @@ struct InboxView: View {
     var body: some View {
         VStack(spacing: 0) {
             controls
+            if !model.arrivalIDs.isEmpty {
+                Button { model.onOpenArrivals?() } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "tray.and.arrow.down").accessibilityHidden(true)
+                        Text(model.arrivalIDs.count == 1 ? "1 new notification" : "\(model.arrivalIDs.count) new notifications")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).accessibilityHidden(true)
+                    }.font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                    .padding(.horizontal, 20).padding(.bottom, 12).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityHint("Reveals the latest arrival in the inbox")
+            }
             if model.searchVisible {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(.secondary).accessibilityHidden(true)

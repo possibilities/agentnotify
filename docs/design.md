@@ -24,7 +24,19 @@ Dragging keeps one screen-space grab point for the whole gesture. Use the mouse 
 
 An unpinned inbox stays open under the pointer, whether it is an anchored popover or a manually placed panel. After the pointer leaves the popover and tray icon, it dismisses after one second; returning cancels the countdown. Opening from the CLI or API does not start a countdown until the pointer has visited. Native menus pause dismissal, while text editing, keyboard navigation, and VoiceOver keep it open. A pinned panel never dismisses on pointer exit. This uses pointer enter/exit events and a one-shot delay, with no position tracking.
 
-## References and verification
+## Arrival previews
+
+The compact arrival and durable inbox answer different questions: what just arrived, and what still needs attention. The selected design is a 440 × 126-point peek into the inbox, with its semantic surface, SF type roles, and continuous 20-point outline. A subtitle (or group) identifies context, followed by the title and up to two message lines. The quiet footer says “New · 3 waiting” or “3 new · 8 waiting.” Waiting includes read, unfinished tasks. The tray keeps that count after the preview disappears, capped visually at 99+ with the exact count in its accessible label and tooltip.
+
+One nonactivating panel appears beneath the safe menu anchor. It stays still while shown, and opening the inbox uses the captured anchor so an updated tray count cannot shift the handoff. It fades in for 160 ms; Reduce Motion removes the fade. After five seconds it dismisses without a store mutation. Hover pauses the timer, leaving gives at least 1.5 seconds, and VoiceOver holds the preview with a polite announcement. The whole body opens the displayed notification; the small X only dismisses the preview. Opening reads the item but never answers, completes, or runs an action. Finish the original mouse-up before creating the transient popover.
+
+Bursts update the same renderer/window. Content and clicked identity stay frozen under hover or a press; the footer updates and the latest item appears after leaving. Group replacements stay durable. If a hovered lead was replaced, a click can still inspect that exact historical item; the full inbox owns current response availability. New arrivals while the inbox is open add a small cue inside it without moving the window, changing the current selection, or putting a second panel over it. Reading or using the cue clears it.
+
+The durable `created` and `due` change events drive arrivals, with a launch cursor baseline. Read, delivery, reopen, and callback bookkeeping never replay arrivals. Eligibility is checked again against current state before presentation. A single visual delivery owner prevents duplicate banners: the compact preview is used for denied/not-determined authorization or disabled native alerts; enabled native banners retain system sound, action, and Focus behavior. There is no attempt to infer whether Focus hid an individual system banner. Custom previews do not change native delivery receipts or the legacy CLI contract, and never add an unrequested sound.
+
+Debug `arrival-studio` opens a separate native controller and synthetic target. It compares this design with a smaller conventional banner and a queue-footer alternative, with single/burst/long scenarios and light/dark appearance. All selections are transient; there is no saved production profile. `render-arrivals <directory>` produces 18 actual SwiftUI renders. The studio, alternatives, and bounded `AGENTNOTIFY_ARRIVAL_PREVIEW_HOLD=1` gesture-inspection hold (requires an isolated state directory) are excluded from release builds.
+
+## Sources
 
 [Vercel design.md](https://vercel.com/design.md) supplies transferable composition and restraint guidance, not Vercel branding for this app. [Web Interface Guidelines](https://vercel.com/design/guidelines) inform native keyboard, focus, label, contrast, and state handling. The wiki’s “Vercel design guidance for native fleet apps” records the adaptation and links the fleet’s chromeless guidance.
 

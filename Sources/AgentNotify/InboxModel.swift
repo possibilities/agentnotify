@@ -15,6 +15,7 @@ final class InboxModel: ObservableObject {
     @Published var presentedAsPanel = false
     @Published var searchVisible = false
     @Published var authorization = "checking"
+    @Published var arrivalIDs: [String] = []
     @Published var error: String?
     @Published var undoItem: (id: String, revision: Int)?
     var service: NotifyService?
@@ -23,6 +24,7 @@ final class InboxModel: ObservableObject {
     var onClose: (() -> Void)?
     var onQuit: (() -> Void)?
     var onChangeCount: ((Int) -> Void)?
+    var onOpenArrivals: (() -> Void)?
     let filters = [("inbox", "Inbox"), ("unread", "Unread"), ("later", "Later"), ("done", "Done"), ("all", "All")]
     var groups: [String] { Array(Set(items.map(\.group).filter { !$0.isEmpty })).sorted() }
     var inboxCount: Int { items.filter(\.isInbox).count }
@@ -44,7 +46,7 @@ final class InboxModel: ObservableObject {
         }
     }
     func refresh() {
-        do { items = try service?.store.all() ?? []; onChangeCount?(unreadCount) }
+        do { items = try service?.store.all() ?? []; onChangeCount?(inboxCount) }
         catch { self.error = "Could not read the inbox. \(error.localizedDescription)" }
     }
     func call(_ method: String, _ params: [String: Any]) {
@@ -53,7 +55,13 @@ final class InboxModel: ObservableObject {
     }
     func select(_ item: NotificationRecord) {
         selected = selected == item.id ? nil : item.id
+        if selected != nil { arrivalIDs.removeAll { $0 == item.id } }
         if selected != nil && item.readAt == nil { call("status", ["id": item.id, "state": "read", "expectedRevision": item.revision]) }
+    }
+    func markRead(_ id: String) {
+        arrivalIDs.removeAll { $0 == id }
+        guard let item = items.first(where: { $0.id == id }), item.readAt == nil else { return }
+        call("status", ["id": id, "state": "read", "expectedRevision": item.revision])
     }
     func done(_ item: NotificationRecord) {
         do {
@@ -73,4 +81,8 @@ final class InboxModel: ObservableObject {
     }
     func snooze(_ item: NotificationRecord, seconds: Double) { call("status", ["id": item.id, "state": "snooze", "until": Date().timeIntervalSince1970 + seconds, "expectedRevision": item.revision]) }
     func reveal(_ id: String?) { if let id { filter = "all"; group = nil; query = ""; period = "any"; selected = id }; refresh() }
+    func revealArrival(_ id: String) {
+        reveal(id)
+        if items.first(where: { $0.id == id })?.isInbox == true { filter = "inbox" }
+    }
 }
