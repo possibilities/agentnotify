@@ -6,7 +6,7 @@ enum PopoverDismissalChecks {
     static func run(window: NSWindow) throws -> [String] {
         var inside = false, allowed = true, dismissals = 0
         let originalMovement = window.acceptsMouseMovedEvents
-        let hover = PopoverDismissal(delay: 0.08, observesPointerEvents: false, containsPointer: { inside }, allowsDismissal: { allowed }, dismiss: { dismissals += 1 })
+        let hover = PopoverDismissal(delay: 0.08, openingDelay: 0.2, observesPointerEvents: false, containsPointer: { inside }, allowsDismissal: { allowed }, dismiss: { dismissals += 1 })
         hover.start(window: window, statusButton: nil)
         defer { hover.stop() }
         func wait(_ seconds: TimeInterval = 0.12) { RunLoop.main.run(until: Date().addingTimeInterval(seconds)) }
@@ -16,7 +16,10 @@ enum PopoverDismissalChecks {
         let event = NSEvent()
         hover.mouseExited(with: event)
         wait()
-        try require(dismissals == 0, "Opening started an unwanted dismissal countdown.")
+        try require(dismissals == 0, "Opening dismissed before its longer grace period.")
+        wait()
+        try require(dismissals == 1, "An unvisited unpinned popover stayed open indefinitely.")
+        dismissals = 0; hover.start(window: window, statusButton: nil)
         inside = true; hover.mouseEntered(with: event)
         inside = false; hover.mouseExited(with: event); wait(0.02)
         try require(dismissals == 0, "Popover dismissed before its grace period.")
@@ -62,7 +65,7 @@ enum PopoverDismissalChecks {
         hover.mouseMoved(with: event); wait()
         try require(dismissals == 5, "Closing or pinning left a dismissal timer active.")
         try require(window.acceptsMouseMovedEvents == originalMovement, "Stopping changed the window's original input policy.")
-        return ["hover grace period", "re-entry cancels dismissal", "menus pause dismissal", "keyboard and protected interactions stay open", "pointer exit resumes dismissal after keyboard use", "mouse movement recovers a missed exit without restarting the deadline", "ending a sheet resumes dismissal", "closing or pinning cancels pending dismissal and restores input policy"]
+        return ["unvisited opening expires after its longer grace period", "hover grace period", "re-entry cancels dismissal", "menus pause dismissal", "keyboard and protected interactions stay open", "pointer exit resumes dismissal after keyboard use", "mouse movement recovers a missed exit without restarting the deadline", "ending a sheet resumes dismissal", "closing or pinning cancels pending dismissal and restores input policy"]
     }
 }
 #endif

@@ -4,6 +4,7 @@ import AppKit
 // the menu bar; the only timer is the grace period after the pointer leaves.
 final class PopoverDismissal: NSResponder {
     private let delay: TimeInterval
+    private let openingDelay: TimeInterval
     private let containsPointer: () -> Bool
     private let allowsDismissal: () -> Bool
     private let dismiss: () -> Void
@@ -19,9 +20,10 @@ final class PopoverDismissal: NSResponder {
     private var keyboardActive = false
     private var hasEntered = false
 
-    init(delay: TimeInterval = 1, observesPointerEvents: Bool = true, containsPointer: @escaping () -> Bool,
+    init(delay: TimeInterval = 1, openingDelay: TimeInterval = 5, observesPointerEvents: Bool = true, containsPointer: @escaping () -> Bool,
          allowsDismissal: @escaping () -> Bool, dismiss: @escaping () -> Void) {
         self.delay = delay; self.containsPointer = containsPointer
+        self.openingDelay = openingDelay
         self.allowsDismissal = allowsDismissal; self.dismiss = dismiss
         self.observesPointerEvents = observesPointerEvents
         super.init()
@@ -77,8 +79,9 @@ final class PopoverDismissal: NSResponder {
                 DispatchQueue.main.async { self?.scheduleIfOutside() }
             }
         ]
-        // Opening alone does not start a countdown. The pointer must leave
-        // the inbox or its tray button before hover dismissal is armed.
+        // A remote or keyboard opening gets time to be noticed, but an unpinned
+        // surface must not remain indefinitely when the pointer never visits.
+        scheduleIfOutside()
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -96,10 +99,10 @@ final class PopoverDismissal: NSResponder {
     override func keyDown(with event: NSEvent) { keyboardActive = true; cancel() }
 
     private func scheduleIfOutside() {
-        guard window != nil, hasEntered, !containsPointer(), !keyboardActive, trackingMenus.isEmpty, allowsDismissal() else { cancel(); return }
+        guard window != nil, !containsPointer(), !keyboardActive, trackingMenus.isEmpty, allowsDismissal() else { cancel(); return }
         // Outside movement must not postpone a countdown already in progress.
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: hasEntered ? delay : openingDelay, repeats: false) { [weak self] _ in
             guard let self else { return }
             self.timer = nil
             guard !self.containsPointer(), !self.keyboardActive, self.trackingMenus.isEmpty,
