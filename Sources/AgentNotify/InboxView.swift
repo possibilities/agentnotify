@@ -23,20 +23,27 @@ struct IconButton: View {
     }
 }
 
-private struct InboxDragRegion: NSViewRepresentable {
+struct InboxDragRegion: NSViewRepresentable {
     final class DragView: NSView {
         private var dragStart: (pointer: NSPoint, origin: NSPoint)?
         override func mouseDown(with event: NSEvent) {
-            guard let panel = window as? InboxPanel else { return }
-            dragStart = (panel.convertPoint(toScreen: event.locationInWindow), panel.frame.origin)
+            dragStart = nil
+            guard let panel = window as? InboxPanel, let pointer = event.cgEvent?.location else { return }
+            dragStart = (pointer, panel.frame.origin)
         }
         override func mouseDragged(with event: NSEvent) {
-            guard let panel = window as? InboxPanel, let start = dragStart else { return }
+            guard let panel = window as? InboxPanel, let start = dragStart, let pointer = event.cgEvent?.location else { return }
+            // Queued event locations belong to an earlier window frame. Use
+            // the event's screen coordinates so moving the panel cannot move
+            // the grab point. Quartz's screen Y axis runs opposite to AppKit's.
+            let origin = NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + start.pointer.y - pointer.y)
+            guard origin != panel.frame.origin else { return }
             panel.onDrag?()
-            let pointer = panel.convertPoint(toScreen: event.locationInWindow)
-            panel.setFrameOrigin(NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + pointer.y - start.pointer.y))
+            panel.setFrameOrigin(origin)
         }
         override func mouseUp(with event: NSEvent) { dragStart = nil }
+        override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); dragStart = nil }
+        override var mouseDownCanMoveWindow: Bool { false }
         override var acceptsFirstResponder: Bool { false }
     }
     func makeNSView(context: Context) -> DragView {

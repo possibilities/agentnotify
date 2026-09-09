@@ -20,6 +20,8 @@ Pinning preserves the content's screen coordinates and the toolbar's control pos
 
 Opening a panel does not automatically focus the category menu. Pointer input clears control focus while preserving an active text editor. Tab and keyboard menu navigation retain native focus indication; VoiceOver retains native focus behavior. Do not suppress every focus ring to make a surface quieter.
 
+Dragging keeps one screen-space grab point for the whole gesture. Use the mouse event's global position and the captured starting window origin; converting queued window-local positions through an already moved window creates feedback and jitter. The header owns dragging, with native background dragging disabled. Mouse-up or changing windows clears the gesture. This preserves the grab point through direction changes without tethering the panel to the menu bar.
+
 An unpinned inbox stays open under the pointer, whether it is an anchored popover or a manually placed panel. After the pointer leaves the popover and tray icon, it dismisses after one second; returning cancels the countdown. Opening from the CLI or API does not start a countdown until the pointer has visited. Native menus pause dismissal, while text editing, keyboard navigation, and VoiceOver keep it open. A pinned panel never dismisses on pointer exit. This uses pointer enter/exit events and a one-shot delay, with no position tracking.
 
 ## References and verification

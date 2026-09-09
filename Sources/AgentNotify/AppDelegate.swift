@@ -208,7 +208,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let panel = self.panel ?? InboxPanel(contentRect: NSRect(origin: .zero, size: inboxSize), styleMask: [.borderless, .resizable], backing: .buffered, defer: false)
             panel.title = "Notifications"
             panel.isOpaque = false; panel.backgroundColor = .clear; panel.hasShadow = true
-            panel.isMovableByWindowBackground = true; panel.isReleasedWhenClosed = false; panel.level = .floating
+            // The header owns dragging; AppKit background dragging must not
+            // compete with its screen-coordinate movement.
+            panel.isMovableByWindowBackground = false; panel.isReleasedWhenClosed = false; panel.level = .floating
             panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
             panel.minSize = NSSize(width: 360, height: 360); panel.maxSize = NSSize(width: 700, height: 1200)
@@ -275,8 +277,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             toggleDetached(); settle()
             toggleDetached(); settle()
             guard let movedPanel = panel else { throw NotifyError("internal_error", "No panel to place manually.") }
-            movedPanel.onDrag?()
-            movedPanel.setFrameOrigin(movedPanel.frame.origin.applying(CGAffineTransform(translationX: -80, y: -90)))
+            let dragChecks = try InboxDragChecks.run(panel: movedPanel)
             guard let placed = contentScreenFrame else { throw NotifyError("internal_error", "No manually placed content.") }
             for _ in 0..<3 {
                 toggleDetached(); settle(); show(); settle()
@@ -296,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             closeSurface()
             try require(!popover.isShown && anchorWindow?.isVisible != true, "Closing left the popover or positioning window visible.")
             let result: [String: Any] = ["ok": true, "checks": ["hidden and negative-coordinate menu anchors", "notched display safe top edge", "popover stays on display", "four pin/unpin cycles preserve content coordinates", "both surfaces stay still across revealed/contracted menu geometry and repeated show", "manually placed panel stays in place without a triangle through three pin/unpin cycles", "fresh opening restores the menu-bar popover", "pinned window configured to persist across app deactivation", "shared content survives transitions", "closing hides the positioning window"], "frames": frames, "notifications": model.items.count]
-            try JSON.data(result.merging(["hoverChecks": hoverChecks]) { _, new in new }).write(to: directory.appendingPathComponent("native-panel-check.json"))
+            try JSON.data(result.merging(["hoverChecks": hoverChecks, "dragChecks": dragChecks]) { _, new in new }).write(to: directory.appendingPathComponent("native-panel-check.json"))
             NSApp.terminate(nil)
         } catch { stderr("Native panel check failed: \(error.localizedDescription)"); exit(1) }
     }
