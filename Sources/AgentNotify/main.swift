@@ -5,7 +5,8 @@ import NotifyCore
 let args = Array(CommandLine.arguments.dropFirst())
 #if DEBUG
 if args.first == "arrival-studio" {
-    MainActor.assumeIsolated { ArrivalStudio.run() }; exit(0)
+    do { try MainActor.assumeIsolated { try ArrivalStudio.run(selections: Array(args.dropFirst())) }; exit(0) }
+    catch { stderr(error.localizedDescription); exit(1) }
 }
 if args.first == "render-arrivals", args.count == 2 {
     _ = NSApplication.shared

@@ -10,9 +10,20 @@ import NotifyCore
 enum ArrivalStudio {
     private static var retainedDelegate: ArrivalStudioDelegate?
 
-    static func run() {
+    static func run(selections: [String]) throws {
+        let state = ArrivalStudioState()
+        if !selections.isEmpty {
+            guard selections.count == 3,
+                  let variant = ArrivalStudioVariant(rawValue: selections[0]),
+                  let scenario = ArrivalStudioScenario(rawValue: selections[1]),
+                  let appearance = ArrivalStudioAppearance(rawValue: selections[2]) else {
+                throw NotifyError("invalid_params", "arrival-studio [queue-peek|compact-toast|queue-shelf single|burst|long light|dark]")
+            }
+            state.variant = variant; state.scenario = scenario; state.appearance = appearance
+            state.applyScenario()
+        }
         let app = NSApplication.shared
-        let delegate = ArrivalStudioDelegate()
+        let delegate = ArrivalStudioDelegate(state: state)
         retainedDelegate = delegate
         app.delegate = delegate
         app.setActivationPolicy(.regular)
@@ -113,20 +124,39 @@ private enum ArrivalStudioAppearance: String, CaseIterable, Identifiable {
 
 @MainActor
 private final class ArrivalStudioState: ObservableObject {
+    enum Surface { case preview, inbox, hidden }
     @Published var variant: ArrivalStudioVariant = .queuePeek
     @Published var scenario: ArrivalStudioScenario = .single
     @Published var appearance: ArrivalStudioAppearance = .light
     @Published var isHovering = false
+    @Published var surface: Surface = .preview
+    @Published var playing = false
+    @Published var secondsLeft = 5
+    @Published var pinned = true
     let arrival = ArrivalViewModel(content: ArrivalStudioScenario.single.content)
     var onOpen: (() -> Void)?
     var onDismiss: (() -> Void)?
+    var onHover: ((Bool) -> Void)?
+
+    var presentationDescription: String {
+        switch surface {
+        case .inbox:
+            return pinned ? "Inbox open · pinned. Try its rows, search, and filters." : "Inbox unpinned · closes after the pointer leaves."
+        case .hidden:
+            return "Notification dismissed. Show preview or play it again."
+        case .preview:
+            if !playing { return "Preview held for inspection. Click it to open the inbox." }
+            if isHovering || NSWorkspace.shared.isVoiceOverEnabled { return "Arrival paused for inspection. Click it to open the inbox." }
+            return "Arrival dismisses in \(secondsLeft)s. Hover to pause."
+        }
+    }
 
     func applyScenario() { arrival.content = scenario.content }
 }
 
 @MainActor
 private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private let state = ArrivalStudioState()
+    private let state: ArrivalStudioState
     private var preview: NSPanel?
     private var controls: NSWindow?
     private var inbox: InboxPanel?
@@ -134,19 +164,48 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
     private var inboxRoot: URL?
     private var inboxScenario: ArrivalStudioScenario?
     private var presentationRevision = 0
+    private var playbackTimer: Timer?
+    private var remaining: TimeInterval = 5
+    private var lastTick: TimeInterval = 0
+    private lazy var hoverDismissal = PopoverDismissal(
+        containsPointer: { [weak self] in self?.inbox?.frame.contains(NSEvent.mouseLocation) == true },
+        allowsDismissal: { [weak self] in
+            guard let self else { return false }
+            return self.state.surface == .inbox && !self.state.pinned && !NSWorkspace.shared.isVoiceOverEnabled
+                && !(self.inbox?.firstResponder is NSTextView)
+        },
+        dismiss: { [weak self] in self?.hideSurfaces() }
+    )
+
+    init(state: ArrivalStudioState) { self.state = state }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        state.onOpen = { [weak self] in self?.showInbox() }
-        state.onDismiss = { [weak self] in self?.dismissPreview() }
+        state.onOpen = { [weak self] in
+            guard let self else { return }
+            let revision = self.presentationRevision
+            // Finish Button's mouse-up before moving focus to another window.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.presentationRevision == revision else { return }
+                self.showInbox()
+            }
+        }
+        state.onDismiss = { [weak self] in self?.hideSurfaces() }
+        state.onHover = { [weak self] hovering in
+            guard let self else { return }
+            self.state.isHovering = hovering
+            if hovering { self.remaining = max(1.5, self.remaining) }
+        }
         makePreview()
         makeControls()
         placeWindows()
-        preview?.orderFront(nil)
+        showPreview()
         controls?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        stopPlayback()
+        hoverDismissal.stop()
         if let inboxRoot { try? FileManager.default.removeItem(at: inboxRoot) }
     }
 
@@ -154,17 +213,38 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
         if notification.object as? NSWindow === controls { NSApp.terminate(nil) }
     }
 
+    func windowDidMove(_ notification: Notification) {
+        if notification.object as? NSWindow === controls { placeTargets() }
+    }
+
+    // AppKit owns these bounded window sizes. Hosting's content-driven sizing
+    // can otherwise resize/reposition a borderless window during a view update.
+    private func host<V: View>(_ view: V, in window: NSWindow, size: NSSize) {
+        let controller = NSHostingController(rootView: view)
+        controller.sizingOptions = []
+        window.contentViewController = controller
+        window.setContentSize(size)
+        controller.view.setFrameOrigin(.zero)
+        controller.view.setBoundsOrigin(.zero)
+        controller.view.setFrameSize(size)
+        controller.view.layoutSubtreeIfNeeded()
+    }
+
     private func makePreview() {
         let size = state.variant.size
-        let panel = NSPanel(
+        let panel = ArrivalPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false
         )
-        panel.contentViewController = NSHostingController(rootView: ArrivalStudioPreview(state: state))
+        host(ArrivalStudioPreview(state: state), in: panel, size: size)
+        panel.title = "Arrival preview · synthetic"
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
         panel.level = .floating
+        panel.isFloatingPanel = true
+        panel.hidesOnDeactivate = false
+        panel.acceptsMouseMovedEvents = true
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.appearance = state.appearance.nativeAppearance
@@ -173,69 +253,128 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
 
     private func makeControls() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 410, height: 352),
+            contentRect: NSRect(x: 0, y: 0, width: 410, height: 380),
             styleMask: [.titled, .closable], backing: .buffered, defer: false
         )
-        window.title = "Arrival Studio · transient preview"
-        window.contentViewController = NSHostingController(rootView: ArrivalStudioControls(
+        window.title = "Arrival Studio"
+        host(ArrivalStudioControls(
             state: state,
             replay: { [weak self] in self?.replay() },
             openInbox: { [weak self] in self?.showInbox() },
-            collapse: { [weak self] in self?.collapse() },
+            showPreview: { [weak self] in self?.showPreview() },
+            arrange: { [weak self] in self?.placeWindows() },
             quit: { NSApp.terminate(nil) },
-            changed: { [weak self] in self?.refreshPreview() }
-        ))
+            designChanged: { [weak self] in self?.showPreview() },
+            appearanceChanged: { [weak self] in self?.applyAppearance() }
+        ), in: window, size: NSSize(width: 410, height: 380))
+        window.level = .floating
         window.isReleasedWhenClosed = false
         window.delegate = self
         controls = window
     }
 
     private func placeWindows() {
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        if let preview {
-            preview.setFrameOrigin(NSPoint(x: screen.maxX - preview.frame.width - 24, y: screen.maxY - preview.frame.height - 24))
-        }
+        let screen = controls?.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         if let controls {
-            controls.setFrameOrigin(NSPoint(x: max(screen.minX + 24, screen.midX - 460), y: screen.midY - controls.frame.height / 2))
+            let top = min(screen.maxY - 24, screen.midY + 305)
+            controls.setFrameTopLeftPoint(NSPoint(x: max(screen.minX + 16, screen.midX - 437), y: top))
+        }
+        placeTargets()
+    }
+
+    private func placeTargets() {
+        guard let controls else { return }
+        guard let screen = controls.screen?.visibleFrame ?? NSScreen.main?.visibleFrame else { return }
+        let right = min(screen.maxX - 16, controls.frame.maxX + 24 + 440)
+        let top = min(screen.maxY - 16, controls.frame.maxY)
+        for window in [preview, inbox].compactMap({ $0 }) {
+            window.setFrameTopLeftPoint(NSPoint(x: right - window.frame.width, y: max(screen.minY + window.frame.height, top)))
         }
     }
 
+    private func applyAppearance() {
+        preview?.appearance = state.appearance.nativeAppearance
+        inbox?.appearance = state.appearance.nativeAppearance
+    }
+
     private func refreshPreview() {
-        presentationRevision += 1
         state.applyScenario()
         if inboxModel != nil, inboxScenario != state.scenario {
             do { try installSyntheticScenario() }
             catch { NSAlert(error: error).runModal() }
         }
-        preview?.appearance = state.appearance.nativeAppearance
-        inbox?.appearance = state.appearance.nativeAppearance
+        if let inboxModel { state.arrival.content.waitingCount = inboxModel.inboxCount }
+        applyAppearance()
         guard let preview else { return }
         let topRight = NSPoint(x: preview.frame.maxX, y: preview.frame.maxY)
         preview.setContentSize(state.variant.size)
+        preview.contentView?.setFrameSize(state.variant.size)
+        preview.contentView?.layoutSubtreeIfNeeded()
         preview.setFrameOrigin(NSPoint(x: topRight.x - preview.frame.width, y: topRight.y - preview.frame.height))
-        if !preview.isVisible && inbox?.isVisible != true { preview.orderFront(nil) }
     }
 
     private func replay() {
-        inbox?.orderOut(nil)
-        refreshPreview()
-        preview?.orderOut(nil)
+        showPreview()
+        state.playing = true
+        state.secondsLeft = 5
+        remaining = 5
+        lastTick = ProcessInfo.processInfo.systemUptime
+        preview?.alphaValue = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 1 : 0
         let revision = presentationRevision
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { [weak self] in
-            guard let self, self.presentationRevision == revision else { return }
-            self.preview?.orderFront(nil)
+        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tickPlayback(revision: revision) }
         }
     }
 
-    private func dismissPreview() { presentationRevision += 1; preview?.orderOut(nil) }
+    private func tickPlayback(revision: Int) {
+        guard presentationRevision == revision else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = now - lastTick
+        lastTick = now
+        preview?.alphaValue = min(1, (preview?.alphaValue ?? 1) + elapsed / 0.16)
+        guard !state.isHovering, NSEvent.pressedMouseButtons == 0, !NSWorkspace.shared.isVoiceOverEnabled else { return }
+        remaining -= elapsed
+        let seconds = max(0, Int(ceil(remaining)))
+        if state.secondsLeft != seconds { state.secondsLeft = seconds }
+        if remaining <= 0 { hideSurfaces() }
+    }
 
-    private func collapse() {
+    private func stopPlayback() {
+        presentationRevision += 1
+        playbackTimer?.invalidate(); playbackTimer = nil
+        state.playing = false
+        state.isHovering = false
+        preview?.alphaValue = 1
+    }
+
+    private func hideSurfaces() {
+        stopPlayback()
+        hoverDismissal.stop()
+        preview?.orderOut(nil)
+        inbox?.orderOut(nil)
+        state.surface = .hidden
+        returnFocusToControls()
+    }
+
+    private func showPreview() {
+        stopPlayback()
+        hoverDismissal.stop()
         inbox?.orderOut(nil)
         refreshPreview()
+        preview?.orderFrontRegardless()
+        state.surface = .preview
+        state.isHovering = preview?.frame.contains(NSEvent.mouseLocation) == true
+        returnFocusToControls()
+    }
+
+    private func returnFocusToControls() {
+        // A borderless panel can leave NSApp without a key window when hidden.
+        // Keep the studio operable, without activating it over another app.
+        if NSApp.isActive { controls?.makeKeyAndOrderFront(nil) }
     }
 
     private func showInbox() {
-        presentationRevision += 1
+        stopPlayback()
         do {
             if inbox == nil { try makeSyntheticInbox() }
             preview?.orderOut(nil)
@@ -244,6 +383,8 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
                 inbox.setFrameTopLeftPoint(NSPoint(x: preview.frame.maxX - inbox.frame.width, y: preview.frame.maxY))
             }
             inbox?.makeKeyAndOrderFront(nil)
+            state.surface = .inbox
+            updatePin()
             NSApp.activate(ignoringOtherApps: true)
             if !NSWorkspace.shared.isVoiceOverEnabled { inbox?.makeFirstResponder(nil) }
         } catch {
@@ -257,7 +398,19 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
         model.authorization = "authorized"
         model.detached = true
         model.presentedAsPanel = true
-        model.onClose = { [weak self] in self?.collapse() }
+        model.onClose = { [weak self] in self?.hideSurfaces() }
+        model.onDetach = { [weak self] in
+            guard let self else { return }
+            self.state.pinned.toggle()
+            self.updatePin()
+        }
+        model.onEnable = {
+            let alert = NSAlert()
+            alert.messageText = "Synthetic notifications"
+            alert.informativeText = "This studio uses sample data. System notification settings are available in the installed AgentNotify app."
+            alert.runModal()
+        }
+        model.onChangeCount = { [weak self] count in self?.state.arrival.content.waitingCount = count }
         model.onQuit = { NSApp.terminate(nil) }
         inboxModel = model
         try installSyntheticScenario()
@@ -266,18 +419,26 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
             styleMask: [.borderless, .resizable], backing: .buffered, defer: false
         )
         window.title = "Notifications · synthetic"
-        window.contentViewController = NSHostingController(rootView: InboxView(model: model))
-        window.setContentSize(NSSize(width: 440, height: 610))
+        host(InboxView(model: model), in: window, size: NSSize(width: 440, height: 610))
         window.isOpaque = false
         window.backgroundColor = .clear
         window.hasShadow = true
         window.isFloatingPanel = true
+        window.level = .floating
+        window.isMovableByWindowBackground = false
         window.hidesOnDeactivate = false
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         window.minSize = NSSize(width: 360, height: 360)
+        window.maxSize = NSSize(width: 700, height: 1200)
         window.isReleasedWhenClosed = false
         if let preview { window.setFrameTopLeftPoint(NSPoint(x: preview.frame.minX, y: preview.frame.maxY)) }
         inbox = window
+    }
+
+    private func updatePin() {
+        inboxModel?.detached = state.pinned
+        hoverDismissal.stop()
+        if !state.pinned, let inbox, inbox.isVisible { hoverDismissal.start(window: inbox, statusButton: nil) }
     }
 
     private func installSyntheticScenario() throws {
@@ -298,7 +459,8 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
         ]
         for index in 0..<pendingCount {
             let sample = supporting[max(0, index - 1) % supporting.count]
-            var params: [String: Any] = ["title": index == 0 ? content.title : sample.0, "message": index == 0 ? content.message : sample.1]
+            var params: [String: Any] = ["title": index == 0 ? content.title : sample.0, "message": index == 0 ? content.message : sample.1,
+                                         "group": index == 0 ? content.group : "Sample \(index)"]
             if index == 0, !content.subtitle.isEmpty { params["subtitle"] = content.subtitle }
             _ = try store.perform("send", params: params, now: now - Double(index))
         }
@@ -307,6 +469,9 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
         model.group = nil
         model.query = ""
         model.period = "any"
+        model.searchVisible = false
+        model.undoItem = nil
+        model.error = nil
         model.refresh()
         model.selected = model.items.max(by: { $0.createdAt < $1.createdAt })?.id
         if let id = model.selected { model.markRead(id) }
@@ -327,7 +492,7 @@ private struct ArrivalStudioPreview: View {
                     model: state.arrival,
                     open: { _ in state.onOpen?() },
                     dismiss: { state.onDismiss?() },
-                    hover: { state.isHovering = $0 }
+                    hover: { state.onHover?($0) }
                 )
             case .compactToast:
                 CompactToastAlternative(content: state.arrival.content, open: { state.onOpen?() })
@@ -336,6 +501,7 @@ private struct ArrivalStudioPreview: View {
             }
         }
         .frame(width: state.variant.size.width, height: state.variant.size.height)
+        .onHover { state.onHover?($0) }
     }
 }
 
@@ -343,15 +509,17 @@ private struct ArrivalStudioControls: View {
     @ObservedObject var state: ArrivalStudioState
     let replay: () -> Void
     let openInbox: () -> Void
-    let collapse: () -> Void
+    let showPreview: () -> Void
+    let arrange: () -> Void
     let quit: () -> Void
-    let changed: () -> Void
+    let designChanged: () -> Void
+    let appearanceChanged: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Transient comparison").font(.system(size: 17, weight: .semibold))
-                Text("Synthetic content · no notifications, callbacks, or saved settings")
+                Text("Compare arrivals").font(.system(size: 17, weight: .semibold))
+                Text("Sample notifications · changes stay in this studio")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Picker("Design", selection: $state.variant) {
@@ -359,25 +527,32 @@ private struct ArrivalStudioControls: View {
             }
             Picker("Scenario", selection: $state.scenario) {
                 ForEach(ArrivalStudioScenario.allCases) { Text($0.title).tag($0) }
-            }
+            }.pickerStyle(.segmented)
             Picker("Appearance", selection: $state.appearance) {
                 ForEach(ArrivalStudioAppearance.allCases) { Text($0.title).tag($0) }
+            }.pickerStyle(.segmented)
+            HStack(spacing: 8) {
+                Button("Show preview", action: showPreview)
+                    .disabled(state.surface == .preview && !state.playing)
+                Button("Play arrival", action: replay)
+                Button("Open inbox", action: openInbox)
+                    .disabled(state.surface == .inbox)
             }
-            HStack(spacing: 10) {
-                Button("Replay", action: replay)
-                Button("Open inbox", action: openInbox).buttonStyle(.borderedProminent)
-                Button("Collapse", action: collapse)
+            Text(state.presentationDescription)
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, minHeight: 34, alignment: .topLeading)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Button("Arrange windows", action: arrange)
                 Spacer()
                 Button("Quit", action: quit)
             }
-            Text(state.isHovering ? "Pointer is over the production preview" : "Pointer is outside the production preview")
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
         }
         .padding(22)
-        .onChange(of: state.variant) { changed() }
-        .onChange(of: state.scenario) { changed() }
-        .onChange(of: state.appearance) { changed() }
-        .frame(width: 410, height: 352, alignment: .topLeading)
+        .onChange(of: state.variant) { designChanged() }
+        .onChange(of: state.scenario) { designChanged() }
+        .onChange(of: state.appearance) { appearanceChanged() }
+        .frame(width: 410, height: 380, alignment: .topLeading)
     }
 }
 
