@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Test the real guarded installer, with every destination under a temporary root."""
 import os
+import json
 from pathlib import Path
 import plistlib
 import subprocess
@@ -53,7 +54,21 @@ with tempfile.TemporaryDirectory(prefix='an-install-', dir='/tmp') as directory:
         assert process.poll() is None, 'installer stopped the running service'
     finally:
         process.terminate(); process.communicate(timeout=5)
-    again = install('--terminal-notifier')
-    assert again.returncode == 0, again.stdout + again.stderr
+    # An existing agent session's MCP transport must survive an app update.
+    mcp = subprocess.Popen([str(command), 'mcp'], env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        mcp.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2025-06-18'}}) + '\n')
+        mcp.stdin.flush()
+        assert json.loads(mcp.stdout.readline())['result']['serverInfo']['name'] == 'agentnotify'
+        executable_before = command.resolve().stat()
+        again = install('--terminal-notifier')
+        assert again.returncode == 0, again.stdout + again.stderr
+        assert executable_before.st_ino != command.resolve().stat().st_ino, 'test did not replace the bundle'
+        assert mcp.poll() is None, 'installer stopped an existing MCP client'
+        mcp.stdin.write(json.dumps({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'}) + '\n')
+        mcp.stdin.flush()
+        assert any(tool['name'] == 'send' for tool in json.loads(mcp.stdout.readline())['result']['tools'])
+    finally:
+        mcp.terminate(); mcp.communicate(timeout=5)
     assert (target/'.local/state/agentnotify-install/deployed-sha').read_text().strip() == subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-    print('Installer checks passed: foreign-file preservation, clean install, legacy alias, unchanged running-app convergence, changed running-app refusal, idempotent reinstall, signed revision and deployed-SHA receipt. All destinations were temporary.')
+    print('Installer checks passed: foreign-file preservation, clean install, legacy alias, unchanged running-app convergence, changed running-app refusal, live MCP client preservation across bundle replacement, signed revision and deployed-SHA receipt. All destinations were temporary.')

@@ -70,6 +70,8 @@ scripts/install.sh --install --terminal-notifier
 
 The installer requires a clean checkout and refuses foreign destinations. An identical signed release is left running unchanged; replacing an older running release requires quitting it first. The installer never launches or restarts the app. It installs to `~/Applications/AgentNotify.app` and `~/.local/bin/agentnotify`. Ensure `~/.local/bin` precedes Homebrew for the optional legacy alias. Ruby callers can set `TERMINAL_NOTIFIER_BIN` before loading the gem. Hardcoded/vendored paths require changes at their owning source.
 
+Existing MCP clients launched through the installed entrypoints remain running during atomic app replacement. They keep their loaded CLI contract until their session ends; subsequent processes use the new release. The app, headless service, and interactive CLI waiters must exit before replacement.
+
 ```sh
 swift run NotifyCoreChecks
 swift build --product agentnotify

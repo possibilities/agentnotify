@@ -44,15 +44,27 @@ if [ -x "$app/Contents/MacOS/AgentNotify" ] && [ -f "$receipt" ] \
     printf 'AgentNotify is already current; left the app and any running process unchanged.\n'
     exit 0
 fi
-if [ -d "$app" ] && /usr/sbin/lsof -t "$app/Contents/MacOS/AgentNotify" >/dev/null 2>&1; then
-    printf 'AgentNotify is running. Quit it before installation; the installer never restarts it.\n' >&2
-    exit 1
-fi
+require_stopped_app() {
+    local pid command_line
+    # MCP processes are socket clients, not the inbox owner. Atomic bundle
+    # replacement leaves their mapped executable running until the session ends.
+    # Preserve them; continue refusing app, serve, and interactive CLI processes.
+    for pid in $(/usr/sbin/lsof -t "$app/Contents/MacOS/AgentNotify" 2>/dev/null || true); do
+        command_line=$(/bin/ps -ww -p "$pid" -o command=) || continue
+        case "$command_line" in
+            "$app/Contents/MacOS/AgentNotify mcp"|"$bin/agentnotify mcp"|"$bin/terminal-notifier mcp"|"agentnotify mcp"|"terminal-notifier mcp") continue ;;
+        esac
+        printf 'AgentNotify is running. Quit it before installation; the installer never restarts it.\n' >&2
+        exit 1
+    done
+}
+require_stopped_app
 "$repo_root/scripts/build.sh"
 mkdir -p "$install_root/Applications" "$bin"
 staging="$(mktemp -d "$install_root/Applications/.agentnotify-install.XXXXXX")"
 trap 'rm -rf "$staging"' EXIT
 cp -R "$repo_root/dist/AgentNotify.app" "$staging/AgentNotify.app"
+require_stopped_app
 if [ -d "$app" ]; then mv "$app" "$staging/previous.app"; fi
 if ! mv "$staging/AgentNotify.app" "$app"; then
     if [ -d "$staging/previous.app" ]; then mv "$staging/previous.app" "$app"; fi
