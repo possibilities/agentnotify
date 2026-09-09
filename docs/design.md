@@ -16,7 +16,7 @@ One action is a button; multiple actions form an Options menu; a reply expands a
 
 The popover and detached panel reuse one hosting controller and model. Hiding a window never changes task state. API/MCP `show` can select a notification and choose detached presentation.
 
-Pinning preserves the content's screen coordinates and the toolbar's control positions. The pinned panel stays visible over other apps and follows the tray as the menu bar reveals or contracts. Drag the blank header area to place it independently; unpinning returns it to the tray. Close lives in More in both presentations. The native popover uses an invisible anchor kept within its display because macOS can move an auto-hidden status window off-screen. See [the positioning decision](adr/0002-stable-menu-bar-anchor.md).
+Pinning preserves the content's screen coordinates and the toolbar's control positions. The pinned panel stays visible over other apps and follows the tray as the menu bar reveals or contracts. The unpinned popover stays at its opening position until closed. Drag the blank header area to place it independently; unpinning returns it to the tray. Close lives in More in both presentations. The native popover uses an invisible anchor kept within its display because macOS can move an auto-hidden status window off-screen. See [the positioning decision](adr/0002-stable-menu-bar-anchor.md).
 
 Opening a panel does not automatically focus the category menu. Pointer input clears control focus while preserving an active text editor. Tab and keyboard menu navigation retain native focus indication; VoiceOver retains native focus behavior. Do not suppress every focus ring to make a surface quieter.
 
