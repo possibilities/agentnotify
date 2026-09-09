@@ -27,6 +27,7 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>AgentNotifyInstaller</key><string>agentnotify/scripts/install.sh</string>
 </dict></plist>
 PLIST
+/usr/libexec/PlistBuddy -c "Add :AgentNotifySourceRevision string $(git rev-parse HEAD)" "$bundle/Contents/Info.plist"
 codesign --force --sign "${AGENTNOTIFY_SIGNING_IDENTITY:--}" --options runtime "$bundle"
 codesign --verify --strict "$bundle"
 printf 'Built %s\n' "$bundle"

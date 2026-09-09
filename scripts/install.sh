@@ -17,13 +17,14 @@ if [ "$mode" = --check ]; then
     exit 0
 fi
 [ -z "$(git -C "$repo_root" status --porcelain)" ] || { printf 'Refusing to install a dirty checkout. Build locally for previews; commit before installing.\n' >&2; exit 1; }
+source_revision="$(git -C "$repo_root" rev-parse HEAD)"
+receipt="$install_root/.local/state/agentnotify-install/deployed-sha"
 # Refuse symlinked destinations and preserve an unrelated application/command.
 for directory in "$install_root/Applications" "$install_root/.local" "$bin"; do
     [ ! -L "$directory" ] || { printf 'Refusing symlink directory: %s\n' "$directory" >&2; exit 1; }
 done
 if [ -e "$app" ] || [ -L "$app" ]; then
     [ ! -L "$app" ] && [ -d "$app" ] && [ "$(/usr/libexec/PlistBuddy -c 'Print :AgentNotifyInstaller' "$app/Contents/Info.plist" 2>/dev/null)" = agentnotify/scripts/install.sh ] || { printf 'Refusing foreign application: %s\n' "$app" >&2; exit 1; }
-    if /usr/sbin/lsof -t "$app/Contents/MacOS/AgentNotify" >/dev/null 2>&1; then printf 'AgentNotify is running. Quit it before installation; the installer never restarts it.\n' >&2; exit 1; fi
 fi
 for command_name in agentnotify $([ "$compat" = 1 ] && printf terminal-notifier); do
     target="$bin/$command_name"
@@ -31,6 +32,22 @@ for command_name in agentnotify $([ "$compat" = 1 ] && printf terminal-notifier)
         [ -L "$target" ] && [ "$(readlink "$target")" = "$app/Contents/MacOS/AgentNotify" ] || { printf 'Refusing foreign command: %s\n' "$target" >&2; exit 1; }
     fi
 done
+# Fleet convergence is safe while this exact installed release is running.
+# Check the signed bundle as well as the receipt before skipping replacement.
+if [ -x "$app/Contents/MacOS/AgentNotify" ] && [ -f "$receipt" ] \
+    && [ "$(cat "$receipt")" = "$source_revision" ] \
+    && [ "$(/usr/libexec/PlistBuddy -c 'Print :AgentNotifySourceRevision' "$app/Contents/Info.plist" 2>/dev/null)" = "$source_revision" ] \
+    && codesign --verify --strict "$app" >/dev/null 2>&1; then
+    mkdir -p "$bin"
+    ln -sfn "$app/Contents/MacOS/AgentNotify" "$bin/agentnotify"
+    if [ "$compat" = 1 ]; then ln -sfn "$app/Contents/MacOS/AgentNotify" "$bin/terminal-notifier"; fi
+    printf 'AgentNotify is already current; left the app and any running process unchanged.\n'
+    exit 0
+fi
+if [ -d "$app" ] && /usr/sbin/lsof -t "$app/Contents/MacOS/AgentNotify" >/dev/null 2>&1; then
+    printf 'AgentNotify is running. Quit it before installation; the installer never restarts it.\n' >&2
+    exit 1
+fi
 "$repo_root/scripts/build.sh"
 mkdir -p "$install_root/Applications" "$bin"
 staging="$(mktemp -d "$install_root/Applications/.agentnotify-install.XXXXXX")"
@@ -44,5 +61,5 @@ fi
 ln -sfn "$app/Contents/MacOS/AgentNotify" "$bin/agentnotify"
 if [ "$compat" = 1 ]; then ln -sfn "$app/Contents/MacOS/AgentNotify" "$bin/terminal-notifier"; fi
 mkdir -p "$install_root/.local/state/agentnotify-install"
-git -C "$repo_root" rev-parse HEAD > "$install_root/.local/state/agentnotify-install/deployed-sha"
+printf '%s\n' "$source_revision" > "$receipt"
 printf 'Installed %s. Open it to enable system notifications.\n' "$app"

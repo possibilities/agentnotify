@@ -68,7 +68,7 @@ scripts/install.sh --install
 scripts/install.sh --install --terminal-notifier
 ```
 
-The installer requires a clean checkout, refuses foreign destinations and a running installed app, and never launches or restarts it. It installs to `~/Applications/AgentNotify.app` and `~/.local/bin/agentnotify`. Ensure `~/.local/bin` precedes Homebrew for the optional legacy alias. Ruby callers can set `TERMINAL_NOTIFIER_BIN` before loading the gem. Hardcoded/vendored paths require changes at their owning source.
+The installer requires a clean checkout and refuses foreign destinations. An identical signed release is left running unchanged; replacing an older running release requires quitting it first. The installer never launches or restarts the app. It installs to `~/Applications/AgentNotify.app` and `~/.local/bin/agentnotify`. Ensure `~/.local/bin` precedes Homebrew for the optional legacy alias. Ruby callers can set `TERMINAL_NOTIFIER_BIN` before loading the gem. Hardcoded/vendored paths require changes at their owning source.
 
 ```sh
 swift run NotifyCoreChecks
