@@ -6,4 +6,6 @@ Read CONTEXT.md and docs/adr/0001-durable-inbox.md before changing notification 
 
 Every behavior belongs to the shared service contract; CLI and MCP are peers. Preserve terminal-notifier 3.1 spellings, stdout, and exit status unless docs/compatibility.md explicitly describes a difference. Reading is not completion. Opening details never executes callbacks. Persist responses before effects; never automatically retry an uncertain external effect.
 
-Shared fleet installation and MCP inventory belong to ~/code/agentstart. Skills under skills/ are discovered by its sync path. Update its skills/fleet/MAP.md when cross-tool edges change. General agent doctrine belongs to ~/code/agentguidance. Do not restart an active installed app as part of a build.
+Shared fleet installation and MCP inventory belong to ~/code/agentstart. Skills under skills/ are discovered by its sync path. Update its skills/fleet/MAP.md when cross-tool edges change. General agent doctrine belongs to ~/code/agentguidance.
+
+A build alone is not delivery. After a verified AgentNotify behavior change is committed, finish by using `scripts/install.sh --install` from a clean checkout, quitting the exact active installed app only when replacement requires it, relaunching the installed app, and verifying that the installed and running executable match the committed build. Never restart an active installed app during the build or before verification.

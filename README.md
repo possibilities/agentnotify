@@ -9,7 +9,7 @@ scripts/build.sh
 open dist/AgentNotify.app
 ```
 
-Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. When macOS banners are off, new notifications appear in a compact preview beneath the tray for five seconds. Hover to keep it visible; click to read it in the full inbox. Dismissing the preview never completes the task. Enabled macOS banners retain their system sound, actions, and Focus behavior. More → Preferences lets you choose Queue Peek (default), Compact Toast, or Queue Shelf. Settings persist across restarts; macOS banner changes are detected while you use the app or System Settings.
+Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. When macOS banners are off, new notifications share one compact preview beneath the tray. It shows the latest arrival, stays until dismissed or opened, and summarizes unread notifications plus any read items that still need attention. Clicking reads the displayed notification in the full inbox; dismissing the preview never completes the task. Enabled macOS banners retain their system sound, actions, and Focus behavior. More → Preferences lets you choose Queue Peek (default), Compact Toast, or Queue Shelf. Settings persist across restarts; macOS banner changes are detected while you use the app or System Settings.
 
 The first inbox opening offers to install a terminal-notifier shim through AgentStart. Choose Not now to skip it; More → Preferences → Terminal integration keeps an Install shim button for later. An existing fleet shim is recognized automatically. The original notifier stays available as a fallback.
 

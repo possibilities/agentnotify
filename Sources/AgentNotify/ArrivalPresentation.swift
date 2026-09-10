@@ -7,21 +7,17 @@ final class ArrivalPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
-/// A transient projection of the durable inbox. Dismissal never writes a response
-/// or changes read/task state, and presenting never activates the application.
+/// A compact projection of the durable inbox. It remains until dismissed or opened.
+/// Dismissal never writes a response or changes read/task state, and presenting
+/// never activates the application.
 final class ArrivalPresentation {
-    private let model = ArrivalViewModel(content: ArrivalContent(id: "", title: "", subtitle: "", message: "", group: "", newCount: 0, waitingCount: 0))
+    private let model = ArrivalViewModel(content: ArrivalContent(id: "", title: "", subtitle: "", message: "", group: "", newCount: 0, unreadCount: 0, waitingCount: 0))
     private(set) var panel: ArrivalPanel?
     private var order: [String] = []
     private var records: [String: NotificationRecord] = [:]
-    private var hovered = false
     private var pressedID: String?
     private var inputMonitor: Any?
-    private var timer: Timer?
-    private var expiresAt: Date?
-    private var remaining: TimeInterval = 5
     private var generation = 0
-    private let duration: TimeInterval
     // Changing preferences must never move the target under a held pointer.
     // Adopt the choice when the next distinct presentation begins.
     var style: ArrivalStyle = .queuePeek
@@ -29,7 +25,6 @@ final class ArrivalPresentation {
     var placement: ((NSSize) -> NSRect?)?
     var open: ((String) -> Void)?
 
-    init(duration: TimeInterval = 5) { self.duration = duration }
     var isVisible: Bool { panel?.isVisible == true }
     var displayedID: String? { isVisible ? model.content.id : nil }
     var newCount: Int { order.count }
@@ -43,20 +38,17 @@ final class ArrivalPresentation {
         }
         guard !order.isEmpty else { dismiss(); return }
         let wasVisible = isVisible
-        if (!hovered && pressedID == nil) || !wasVisible { selectLatest() }
+        if pressedID == nil || !wasVisible { selectLatest() }
         updateCounts(items)
         if !wasVisible { present() }
-        remaining = duration
-        if !hovered && pressedID == nil { schedule(duration) }
     }
 
     func refresh(_ items: [NotificationRecord]) {
         synchronize(items)
         guard !order.isEmpty else { dismiss(); return }
-        // Freeze the displayed text through hover/press, even if its group was
-        // replaced. Clicking still opens that exact durable history item; only
-        // the full inbox ever exposes its current response/action state.
-        if records[model.content.id] == nil && isVisible && !hovered && pressedID == nil { selectLatest() }
+        // Freeze the displayed text only during a press. Clicking still opens
+        // that exact durable history item even if a replacement arrives.
+        if records[model.content.id] == nil && isVisible && pressedID == nil { selectLatest() }
         updateCounts(items)
     }
 
@@ -68,13 +60,15 @@ final class ArrivalPresentation {
 
     private func updateCounts(_ items: [NotificationRecord]) {
         model.content.newCount = order.count
+        model.content.unreadCount = items.filter { $0.isInbox && $0.readAt == nil }.count
         model.content.waitingCount = items.filter(\.isInbox).count
     }
 
     private func selectLatest() {
         guard let id = order.last, let item = records[id] else { return }
         model.content = ArrivalContent(id: item.id, title: item.title, subtitle: item.subtitle,
-            message: item.message, group: item.group, newCount: order.count, waitingCount: model.content.waitingCount)
+            message: item.message, group: item.group, newCount: order.count,
+            unreadCount: model.content.unreadCount, waitingCount: model.content.waitingCount)
     }
 
     private func present() {
@@ -90,8 +84,7 @@ final class ArrivalPresentation {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             let controller = NSHostingController(rootView: ArrivalSurface(model: model,
                 open: { [weak self] id in self?.openDisplayed(id) },
-                dismiss: { [weak self] in self?.dismiss() },
-                hover: { [weak self] in self?.setHovered($0) }))
+                dismiss: { [weak self] in self?.dismiss() }))
             controller.sizingOptions = []
             panel.contentViewController = controller
             self.panel = panel
@@ -99,7 +92,6 @@ final class ArrivalPresentation {
                 guard let self, event.window === panel else { return event }
                 if event.type == .leftMouseDown {
                     self.pressedID = self.model.content.id
-                    self.cancelTimer()
                 } else {
                     let expected = self.generation
                     // Let Button finish its release against the pressed content
@@ -107,7 +99,7 @@ final class ArrivalPresentation {
                     DispatchQueue.main.async { [weak self] in
                         guard let self, self.generation == expected else { return }
                         self.pressedID = nil
-                        if !self.hovered && self.isVisible { self.selectLatest(); self.schedule(self.duration) }
+                        if self.isVisible { self.selectLatest() }
                     }
                 }
                 return event
@@ -120,7 +112,6 @@ final class ArrivalPresentation {
         panel.contentView?.layoutSubtreeIfNeeded()
         panel.alphaValue = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 1 : 0
         panel.orderFrontRegardless()
-        hovered = panel.frame.contains(NSEvent.mouseLocation)
         if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16
@@ -129,35 +120,9 @@ final class ArrivalPresentation {
         }
         if NSWorkspace.shared.isVoiceOverEnabled, let view = panel.contentView {
             NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: [
-                .announcement: "\(model.content.title). \(model.content.waitingCount) notifications waiting.",
+                .announcement: "\(model.content.title). \(model.content.queueAccessibilitySummary).",
                 .priority: NSAccessibilityPriorityLevel.medium.rawValue
             ])
-        }
-    }
-
-    func setHovered(_ value: Bool) {
-        guard hovered != value else { return }
-        hovered = value
-        if value {
-            remaining = max(1.5, expiresAt?.timeIntervalSinceNow ?? duration)
-            cancelTimer()
-        } else if isVisible {
-            guard pressedID == nil else { return }
-            let changed = model.content.id != order.last
-            selectLatest()
-            schedule(changed ? duration : max(1.5, remaining))
-        }
-    }
-
-    private func schedule(_ delay: TimeInterval) {
-        cancelTimer()
-        guard isVisible, !hovered, pressedID == nil, !NSWorkspace.shared.isVoiceOverEnabled else { return }
-        expiresAt = Date().addingTimeInterval(delay)
-        let expected = generation
-        timer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
-            guard let self, self.generation == expected, !self.hovered else { return }
-            if NSEvent.pressedMouseButtons != 0 { self.schedule(1.5); return }
-            self.dismiss()
         }
     }
 
@@ -170,11 +135,9 @@ final class ArrivalPresentation {
 
     func dismiss() {
         generation += 1
-        cancelTimer()
         panel?.orderOut(nil)
-        order.removeAll(); records.removeAll(); hovered = false; pressedID = nil
+        order.removeAll(); records.removeAll(); pressedID = nil
     }
 
-    private func cancelTimer() { timer?.invalidate(); timer = nil; expiresAt = nil }
-    deinit { timer?.invalidate(); if let inputMonitor { NSEvent.removeMonitor(inputMonitor) } }
+    deinit { if let inputMonitor { NSEvent.removeMonitor(inputMonitor) } }
 }

@@ -9,7 +9,55 @@ struct ArrivalContent: Equatable {
     var message: String
     var group: String
     var newCount: Int
+    var unreadCount: Int
     var waitingCount: Int
+
+    var queueSummary: String {
+        let waiting = max(0, waitingCount)
+        let unread = max(0, min(unreadCount, waiting))
+        let read = waiting - unread
+        var parts: [String] = []
+
+        if newCount > 1 { parts.append("Latest of \(newCount) arrivals") }
+        if unread > 0 {
+            parts.append(unread == 1 ? "1 unread notification" : "\(unread) unread notifications")
+        }
+        if read > 0 {
+            parts.append(read == 1 ? "1 read notification still needs attention" : "\(read) read still need attention")
+        }
+        if parts.isEmpty { parts.append("No notifications waiting") }
+        return parts.joined(separator: "  ·  ")
+    }
+
+    var queueAccessibilitySummary: String {
+        let waiting = max(0, waitingCount)
+        let unread = max(0, min(unreadCount, waiting))
+        let read = waiting - unread
+        var parts: [String] = []
+        if newCount > 1 { parts.append("Latest of \(newCount) arrivals") }
+        parts.append(unread == 1 ? "1 unread notification" : "\(unread) unread notifications")
+        if read > 0 {
+            parts.append(read == 1 ? "1 read notification still needs attention" : "\(read) read notifications still need attention")
+        }
+        return parts.joined(separator: ". ")
+    }
+
+    var compactQueueSummary: String {
+        let waiting = max(0, waitingCount)
+        let unread = max(0, min(unreadCount, waiting))
+        let read = waiting - unread
+        var parts: [String] = []
+        if newCount > 1 { parts.append("Latest of \(newCount)") }
+        if unread > 0 { parts.append("\(unread) unread") }
+        if read > 0 { parts.append("\(read) read pending") }
+        if parts.isEmpty { parts.append("Nothing waiting") }
+        return parts.joined(separator: "  ·  ")
+    }
+
+    var openAccessibilityLabel: String {
+        let displayTitle = title.isEmpty ? "Notification" : title
+        return "\(displayTitle). \(message). \(queueAccessibilitySummary)"
+    }
 }
 
 final class ArrivalViewModel: ObservableObject {
@@ -31,84 +79,59 @@ struct ArrivalView: View {
 
     @ObservedObject var model: ArrivalViewModel
     let open: (String) -> Void
-    let dismiss: () -> Void
-    let hover: (Bool) -> Void
-
-    @State private var hovered = false
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Button { open(model.content.id) } label: {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(metadata)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.trailing, 30)
-
-                    Text(model.content.title.isEmpty ? "Notification" : model.content.title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(.primary)
-                        .lineLimit(1)
-                        .padding(.top, 8)
-
-                    Text(model.content.message)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .lineSpacing(3)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 4)
-
-                    Spacer(minLength: 5)
-
-                    HStack(spacing: 6) {
-                        Image(systemName: "tray.fill")
-                            .font(.system(size: 10, weight: .medium))
-                            .accessibilityHidden(true)
-                        Text(queueSummary)
-                            .monospacedDigit()
-                        Spacer(minLength: 8)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 9, weight: .semibold))
-                            .accessibilityHidden(true)
-                    }
+        Button { open(model.content.id) } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(metadata)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(openAccessibilityLabel)
-            .accessibilityHint("Opens the notification inbox")
+                    .lineLimit(1)
+                    .padding(.trailing, 30)
 
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-                    .frame(width: 24, height: 24)
-                    .contentShape(Rectangle())
+                Text(model.content.title.isEmpty ? "Notification" : model.content.title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .padding(.top, 8)
+
+                Text(model.content.message)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.primary.opacity(0.85))
+                    .lineSpacing(3)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+
+                Spacer(minLength: 5)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "tray.fill")
+                        .font(.system(size: 10, weight: .medium))
+                        .accessibilityHidden(true)
+                    ArrivalSummaryText(content: model.content)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .accessibilityHidden(true)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .opacity(hovered ? 0.9 : 0.45)
-            .padding(.top, 9)
-            .padding(.trailing, 9)
-            .help("Dismiss Preview")
-            .accessibilityLabel("Dismiss notification preview")
+            .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel(model.content.openAccessibilityLabel)
+        .accessibilityHint("Opens the notification inbox")
         .frame(minWidth: 360, maxWidth: .infinity)
         .frame(height: Self.preferredSize.height)
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: InboxPanel.cornerRadius, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: InboxPanel.cornerRadius, style: .continuous)
-                .strokeBorder(Color.primary.opacity(hovered ? 0.11 : 0.07), lineWidth: 0.5)
-        }
-        .onHover {
-            hovered = $0
-            hover($0)
+                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 0.5)
         }
     }
 
@@ -117,15 +140,16 @@ struct ArrivalView: View {
         if !model.content.group.isEmpty { return model.content.group }
         return "AgentNotify"
     }
+}
 
-    private var queueSummary: String {
-        let waiting = max(0, model.content.waitingCount)
-        let waitingText = "\(waiting) waiting"
-        return model.content.newCount <= 1 ? "New  ·  \(waitingText)" : "\(model.content.newCount) new  ·  \(waitingText)"
-    }
+struct ArrivalSummaryText: View {
+    let content: ArrivalContent
 
-    private var openAccessibilityLabel: String {
-        let title = model.content.title.isEmpty ? "Notification" : model.content.title
-        return "\(title). \(model.content.message). \(max(0, model.content.waitingCount)) notifications waiting"
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(content.queueSummary).fixedSize(horizontal: true, vertical: false)
+            Text(content.compactQueueSummary).lineLimit(1)
+        }
+        .monospacedDigit()
     }
 }

@@ -24,17 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var inboxSize = NSSize(width: 440, height: 610)
     private var manuallyPlaced = false
     private var usesPanel: Bool { model.detached || manuallyPlaced }
-    private let arrivals: ArrivalPresentation = {
-        #if DEBUG
-        // A bounded hold for physical gesture inspection in an isolated app.
-        // This is absent from release and cannot affect the person's inbox.
-        if ProcessInfo.processInfo.environment["AGENTNOTIFY_STATE_DIR"] != nil,
-           ProcessInfo.processInfo.environment["AGENTNOTIFY_ARRIVAL_PREVIEW_HOLD"] == "1" {
-            return ArrivalPresentation(duration: 60)
-        }
-        #endif
-        return ArrivalPresentation()
-    }()
+    private let arrivals = ArrivalPresentation()
     private var arrivalTracker: ArrivalTracker?
     private var pendingArrivalIDs: [String] = []
     private var arrivalAnchor: NSRect?

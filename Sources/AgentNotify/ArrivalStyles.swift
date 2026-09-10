@@ -31,20 +31,43 @@ struct ArrivalSurface: View {
     @ObservedObject var model: ArrivalViewModel
     let open: (String) -> Void
     let dismiss: () -> Void
-    let hover: (Bool) -> Void
+    @State private var hovered = false
 
     var body: some View {
-        Group {
-            switch model.style {
-            case .queuePeek: ArrivalView(model: model, open: open, dismiss: dismiss, hover: { _ in })
-            case .compactToast: CompactToastView(content: model.content, open: { open(model.content.id) })
-            case .queueShelf: QueueShelfView(content: model.content, open: { open(model.content.id) })
+        ZStack(alignment: .topTrailing) {
+            Group {
+                switch model.style {
+                case .queuePeek: ArrivalView(model: model, open: open)
+                case .compactToast: CompactToastView(content: model.content, open: { open(model.content.id) })
+                case .queueShelf: QueueShelfView(content: model.content, open: { open(model.content.id) })
+                }
             }
+            ArrivalDismissButton(action: dismiss)
+                .opacity(hovered ? 0.9 : 0.55)
+                .padding(.top, 9)
+                .padding(.trailing, 9)
         }
         .frame(maxWidth: .infinity)
         .frame(height: model.style.size.height)
-        .onHover(perform: hover)
+        .onHover { hovered = $0 }
         .accessibilityAction(named: Text("Dismiss preview"), dismiss)
+    }
+}
+
+private struct ArrivalDismissButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Dismiss preview")
+        .accessibilityLabel("Dismiss notification preview")
     }
 }
 
@@ -60,23 +83,22 @@ struct CompactToastView: View {
                     .frame(width: 28, height: 28)
                     .background(.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(content.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text(content.waitingCount == 1 ? "1 waiting" : "\(content.waitingCount) waiting")
-                            .font(.system(size: 10)).foregroundStyle(.secondary)
-                    }
-                    Text(content.message).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(2)
+                    Text(content.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(content.message).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                    ArrivalSummaryText(content: content)
+                        .font(.system(size: 10)).foregroundStyle(.secondary)
                 }
             }
             .padding(.horizontal, 14)
+            .padding(.trailing, 28)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(content.title). \(content.message). \(content.waitingCount) waiting. Open notifications.")
+        .accessibilityLabel(content.openAccessibilityLabel)
+        .accessibilityHint("Opens the notification inbox")
     }
 }
 
@@ -91,16 +113,15 @@ struct QueueShelfView: View {
                     Text(content.group.isEmpty ? "Notification" : content.group)
                         .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                     Spacer()
-                    Text(content.newCount > 1 ? "+\(content.newCount) new" : "New")
-                        .font(.system(size: 11, weight: .semibold))
                 }
+                .padding(.trailing, 30)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(content.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     Text(content.message).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2)
                 }
                 HStack(spacing: 7) {
-                    Circle().frame(width: 5, height: 5)
-                    Text(content.waitingCount == 1 ? "1 item stays in your inbox" : "\(content.waitingCount) items stay in your inbox")
+                    Image(systemName: "tray.fill").font(.system(size: 10, weight: .medium))
+                    ArrivalSummaryText(content: content)
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer()
                     Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(.tertiary)
@@ -113,6 +134,7 @@ struct QueueShelfView: View {
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(content.title). \(content.message). \(content.waitingCount) waiting. Open notifications.")
+        .accessibilityLabel(content.openAccessibilityLabel)
+        .accessibilityHint("Opens the notification inbox")
     }
 }

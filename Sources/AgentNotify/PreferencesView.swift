@@ -11,7 +11,7 @@ final class PreferencesModel: ObservableObject {
     let preview = ArrivalViewModel(content: ArrivalContent(
         id: "preferences-sample", title: "Build finished", subtitle: "AgentNotify",
         message: "All checks passed. The next step is ready when you are.",
-        group: "AgentNotify", newCount: 1, waitingCount: 3
+        group: "AgentNotify", newCount: 1, unreadCount: 2, waitingCount: 3
     ))
     var service: NotifyService?
     var onChange: ((AppPreferences) -> Void)?
@@ -169,7 +169,7 @@ struct PreferencesView: View {
                 .frame(height: 30, alignment: .topLeading)
             VStack(alignment: .leading, spacing: 10) {
                 Text("Preview").font(.system(size: 11)).foregroundStyle(.secondary)
-                ArrivalSurface(model: model.preview, open: { _ in }, dismiss: {}, hover: { _ in })
+                ArrivalSurface(model: model.preview, open: { _ in }, dismiss: {})
                     .frame(width: model.current.arrivalStyle.size.width, height: model.current.arrivalStyle.size.height)
                     .allowsHitTesting(false)
                     .accessibilityElement(children: .ignore)

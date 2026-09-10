@@ -75,19 +75,19 @@ private enum ArrivalStudioScenario: String, CaseIterable, Identifiable {
             return ArrivalContent(
                 id: "studio-single", title: "Build finished", subtitle: "",
                 message: "All checks passed. AgentNotify is ready for a closer look.",
-                group: "AgentNotify", newCount: 1, waitingCount: 3
+                group: "AgentNotify", newCount: 1, unreadCount: 2, waitingCount: 3
             )
         case .burst:
             return ArrivalContent(
                 id: "studio-burst", title: "Three updates just arrived", subtitle: "Release train",
                 message: "Build complete, review ready, and one decision is waiting for you.",
-                group: "Agent fleet", newCount: 3, waitingCount: 8
+                group: "Agent fleet", newCount: 3, unreadCount: 5, waitingCount: 8
             )
         case .long:
             return ArrivalContent(
                 id: "studio-long", title: "Research synthesis needs your review", subtitle: "Native notifications",
                 message: "The design agency compared interruption levels, queue visibility, reduced motion, and the transition into the durable inbox.",
-                group: "Design studio", newCount: 1, waitingCount: 12
+                group: "Design studio", newCount: 1, unreadCount: 10, waitingCount: 12
             )
         }
     }
@@ -106,26 +106,20 @@ private final class ArrivalStudioState: ObservableObject {
     @Published var variant: ArrivalStyle = .queuePeek
     @Published var scenario: ArrivalStudioScenario = .single
     @Published var appearance: ArrivalStudioAppearance = .light
-    @Published var isHovering = false
     @Published var surface: Surface = .preview
-    @Published var playing = false
-    @Published var secondsLeft = 5
     @Published var pinned = true
     let arrival = ArrivalViewModel(content: ArrivalStudioScenario.single.content)
     var onOpen: (() -> Void)?
     var onDismiss: (() -> Void)?
-    var onHover: ((Bool) -> Void)?
 
     var presentationDescription: String {
         switch surface {
         case .inbox:
             return pinned ? "Inbox open · pinned. Try its rows, search, and filters." : "Inbox unpinned · closes after the pointer leaves."
         case .hidden:
-            return "Notification dismissed. Show preview or play it again."
+            return "Notification dismissed. Show or replay the preview."
         case .preview:
-            if !playing { return "Preview held for inspection. Click it to open the inbox." }
-            if isHovering || NSWorkspace.shared.isVoiceOverEnabled { return "Arrival paused for inspection. Click it to open the inbox." }
-            return "Arrival dismisses in \(secondsLeft)s. Hover to pause."
+            return "The latest arrival stays here until you dismiss it or open the inbox."
         }
     }
 
@@ -142,9 +136,6 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
     private var inboxRoot: URL?
     private var inboxScenario: ArrivalStudioScenario?
     private var presentationRevision = 0
-    private var playbackTimer: Timer?
-    private var remaining: TimeInterval = 5
-    private var lastTick: TimeInterval = 0
     private lazy var hoverDismissal = PopoverDismissal(
         containsPointer: { [weak self] in self?.inbox?.frame.contains(NSEvent.mouseLocation) == true },
         allowsDismissal: { [weak self] in
@@ -168,11 +159,6 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
             }
         }
         state.onDismiss = { [weak self] in self?.hideSurfaces() }
-        state.onHover = { [weak self] hovering in
-            guard let self else { return }
-            self.state.isHovering = hovering
-            if hovering { self.remaining = max(1.5, self.remaining) }
-        }
         makePreview()
         makeControls()
         placeWindows()
@@ -182,7 +168,6 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        stopPlayback()
         hoverDismissal.stop()
         if let inboxRoot { try? FileManager.default.removeItem(at: inboxRoot) }
     }
@@ -281,7 +266,10 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
             do { try installSyntheticScenario() }
             catch { NSAlert(error: error).runModal() }
         }
-        if let inboxModel { state.arrival.content.waitingCount = inboxModel.inboxCount }
+        if let inboxModel {
+            state.arrival.content.waitingCount = inboxModel.inboxCount
+            state.arrival.content.unreadCount = inboxModel.unreadCount
+        }
         applyAppearance()
         guard let preview else { return }
         let topRight = NSPoint(x: preview.frame.maxX, y: preview.frame.maxY)
@@ -293,40 +281,20 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
 
     private func replay() {
         showPreview()
-        state.playing = true
-        state.secondsLeft = 5
-        remaining = 5
-        lastTick = ProcessInfo.processInfo.systemUptime
-        preview?.alphaValue = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 1 : 0
-        let revision = presentationRevision
-        playbackTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.tickPlayback(revision: revision) }
+        guard let preview else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            preview.alphaValue = 1
+        } else {
+            preview.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                preview.animator().alphaValue = 1
+            }
         }
     }
 
-    private func tickPlayback(revision: Int) {
-        guard presentationRevision == revision else { return }
-        let now = ProcessInfo.processInfo.systemUptime
-        let elapsed = now - lastTick
-        lastTick = now
-        preview?.alphaValue = min(1, (preview?.alphaValue ?? 1) + elapsed / 0.16)
-        guard !state.isHovering, NSEvent.pressedMouseButtons == 0, !NSWorkspace.shared.isVoiceOverEnabled else { return }
-        remaining -= elapsed
-        let seconds = max(0, Int(ceil(remaining)))
-        if state.secondsLeft != seconds { state.secondsLeft = seconds }
-        if remaining <= 0 { hideSurfaces() }
-    }
-
-    private func stopPlayback() {
-        presentationRevision += 1
-        playbackTimer?.invalidate(); playbackTimer = nil
-        state.playing = false
-        state.isHovering = false
-        preview?.alphaValue = 1
-    }
-
     private func hideSurfaces() {
-        stopPlayback()
+        presentationRevision += 1
         hoverDismissal.stop()
         preview?.orderOut(nil)
         inbox?.orderOut(nil)
@@ -335,13 +303,12 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
     }
 
     private func showPreview() {
-        stopPlayback()
+        presentationRevision += 1
         hoverDismissal.stop()
         inbox?.orderOut(nil)
         refreshPreview()
         preview?.orderFrontRegardless()
         state.surface = .preview
-        state.isHovering = preview?.frame.contains(NSEvent.mouseLocation) == true
         returnFocusToControls()
     }
 
@@ -352,7 +319,7 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
     }
 
     private func showInbox() {
-        stopPlayback()
+        presentationRevision += 1
         do {
             if inbox == nil { try makeSyntheticInbox() }
             preview?.orderOut(nil)
@@ -388,7 +355,10 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
             alert.informativeText = "This studio uses sample data. System notification settings are available in the installed AgentNotify app."
             alert.runModal()
         }
-        model.onChangeCount = { [weak self] count in self?.state.arrival.content.waitingCount = count }
+        model.onChangeCount = { [weak self, weak model] count in
+            self?.state.arrival.content.waitingCount = count
+            self?.state.arrival.content.unreadCount = model?.unreadCount ?? 0
+        }
         model.onQuit = { NSApp.terminate(nil) }
         inboxModel = model
         try installSyntheticScenario()
@@ -466,8 +436,7 @@ private struct ArrivalStudioPreview: View {
         ArrivalSurface(
             model: state.arrival,
             open: { _ in state.onOpen?() },
-            dismiss: { state.onDismiss?() },
-            hover: { state.onHover?($0) }
+            dismiss: { state.onDismiss?() }
         )
         .frame(width: state.variant.size.width, height: state.variant.size.height)
     }
@@ -501,8 +470,8 @@ private struct ArrivalStudioControls: View {
             }.pickerStyle(.segmented)
             HStack(spacing: 8) {
                 Button("Show preview", action: showPreview)
-                    .disabled(state.surface == .preview && !state.playing)
-                Button("Play arrival", action: replay)
+                    .disabled(state.surface == .preview)
+                Button("Replay arrival", action: replay)
                 Button("Open inbox", action: openInbox)
                     .disabled(state.surface == .inbox)
             }
