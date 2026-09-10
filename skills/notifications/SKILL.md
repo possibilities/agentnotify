@@ -41,7 +41,7 @@ Read is separate from done. Reading never executes callbacks. The inbox does not
 
 ## Browse and coordinate
 
-`list` filters inbox, unread, later, done, or all; add exact group, search query, and creation time bounds. `status` marks read/unread, done, reopen, or snooze. `remove` withdraws a group or ALL while preserving history. Never remove ALL merely to clean up a test.
+`list` filters inbox, unread, later, done, or all; add exact group, search query, and creation time bounds. `status` marks read/unread, done, reopen, or snooze. `completeAll` atomically moves every active Inbox notification to Done, closes unanswered prompts without running callbacks, and leaves scheduled or snoozed notifications alone. `remove` withdraws a group or ALL while preserving history. Never remove ALL merely to clean up a test.
 
 For concurrent clients, include a unique `requestId` on mutations and reuse it with identical input only for retries. Use the current `expectedRevision` to avoid stale writes. `changes` returns ordered snapshots after a cursor; persist that cursor and drain `hasMore` pages. This is a local multi-client contract, not a deployed mobile sync service.
 

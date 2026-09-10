@@ -92,6 +92,12 @@ final class InboxModel: ObservableObject {
             refresh()
         } catch { self.error = error.localizedDescription }
     }
+    func completeAll() {
+        guard inboxCount > 0 else { return }
+        call("completeAll", ["requestId": UUID().uuidString.lowercased()])
+        selected = nil
+        arrivalIDs.removeAll()
+    }
     func undo() {
         guard let item = undoItem else { return }
         call("status", ["id": item.id, "state": "reopen", "expectedRevision": item.revision]); undoItem = nil

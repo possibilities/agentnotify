@@ -107,6 +107,16 @@ public final class Store {
             let end = changes.last?["cursor"] as? Int ?? after
             return ["changes": changes, "cursor": end, "hasMore": end < (try cursor())]
         case "status": return try mutate(p, now)
+        case "completeAll":
+            var completed: [String] = []
+            for var item in try all() where item.isInbox {
+                complete(&item, now)
+                item.updatedAt = now
+                item.revision += 1
+                try save(item, kind: "done")
+                completed.append(item.id)
+            }
+            return ["completed": completed]
         case "respond": return try respond(p, now)
         case "remove":
             let group = p["group"] as! String
@@ -176,9 +186,7 @@ public final class Store {
         switch state {
         case "read": item.readAt = now
         case "unread": item.readAt = nil
-        case "done":
-            item.status = "done"; item.readAt = item.readAt ?? now
-            if item.interactive && item.response == nil { item.response = Response(kind: "close", value: "@CLOSED", exitCode: 0, at: now) }
+        case "done": complete(&item, now)
         case "reopen":
             guard !["removed", "superseded"].contains(item.status) else { throw NotifyError("invalid_state", "Removed or replaced notifications remain in history; send a new notification.") }
             item.status = "active"; item.snoozedUntil = nil
@@ -191,6 +199,13 @@ public final class Store {
         item.updatedAt = now; item.revision += 1
         try save(item, kind: state)
         return try JSON.encode(item)
+    }
+    private func complete(_ item: inout NotificationRecord, _ now: Double) {
+        item.status = "done"
+        item.readAt = item.readAt ?? now
+        if item.interactive && item.response == nil {
+            item.response = Response(kind: "close", value: "@CLOSED", exitCode: 0, at: now)
+        }
     }
     private func respond(_ p: [String: Any], _ now: Double) throws -> [String: Any] {
         var item = try checked(p)

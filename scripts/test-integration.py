@@ -154,11 +154,19 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
             return json.loads(mcp.stdout.readline())
         check(mcp_call(1, 'initialize', {'protocolVersion': '2025-06-18'})['result']['serverInfo']['name'] == 'agentnotify', 'MCP initialize')
         tools = mcp_call(2, 'tools/list')['result']['tools']
-        check({t['name'] for t in tools} == {'send','list','get','status','respond','remove','changes','diagnose','show','heartbeat','preferences','setPreferences','showPreferences','shimStatus','installShim','dismissShimSetup'}, 'MCP parity catalog')
+        check({t['name'] for t in tools} == {'send','list','get','status','completeAll','respond','remove','changes','diagnose','show','heartbeat','preferences','setPreferences','showPreferences','shimStatus','installShim','dismissShimSetup'}, 'MCP parity catalog')
         result = mcp_call(3, 'tools/call', {'name': 'send', 'arguments': {'message': 'MCP notice', 'group': 'mcp'}})['result']
         check(not result['isError'] and result['structuredContent']['ok'], 'MCP send')
         bad = mcp_call(4, 'tools/call', {'name': 'send', 'arguments': {'message': False}})['result']
         check(bad['isError'], 'MCP validation parity')
+        bulk_plain = ok('send', {'message': 'bulk completion'})
+        bulk_prompt = ok('send', {'message': 'bulk prompt', 'actions': ['Keep Working']})
+        completed = mcp_call(20, 'tools/call', {'name': 'completeAll', 'arguments': {'requestId': 'bulk-mcp'}})['result']
+        check(not completed['isError'] and {bulk_plain['id'], bulk_prompt['id']}.issubset(set(completed['structuredContent']['data']['completed'])), 'MCP completes the active inbox atomically')
+        check(ok('diagnose')['inbox'] == 0, 'complete all leaves no active inbox notifications')
+        check(ok('get', {'id': bulk_prompt['id']})['response']['kind'] == 'close', 'complete all closes unanswered prompts')
+        empty_complete = cli('completeAll', '--requestId', 'bulk-cli')
+        check(empty_complete.returncode == 0 and json.loads(empty_complete.stdout)['data']['completed'] == [], 'CLI observes the same complete all contract')
         preference_cursor = ok('diagnose')['cursor']
         initial_preferences = ok('preferences')
         check(initial_preferences == {'arrivalStyle': 'queue-peek', 'showBannerReminder': True, 'revision': 1}, 'default preferences')

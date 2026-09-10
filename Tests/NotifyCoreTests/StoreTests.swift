@@ -22,6 +22,27 @@ final class StoreTests: CheckCase {
         expectEqual(try store.get(item.id).status, "done")
         expectEqual(try store.cursor(), 3)
     }
+    func testCompleteAllAtomicallyFinishesOnlyTheInbox() throws {
+        let plain = try send(["execute": "/usr/bin/false"])
+        let prompt = try send(["actions": ["Keep Working"]], now: 1001)
+        let scheduled = try send(["in": "1h"], now: 1002)
+        let result = try store.perform("completeAll", params: ["requestId": "complete-all-1"], now: 1003)
+        expectEqual(Set(result["completed"] as? [String] ?? []), Set([plain.id, prompt.id]))
+        let completedPlain = try store.get(plain.id)
+        expectEqual(completedPlain.status, "done")
+        expectEqual(completedPlain.readAt, 1003)
+        expectNil(completedPlain.response)
+        let completedPrompt = try store.get(prompt.id)
+        expectEqual(completedPrompt.status, "done")
+        expectEqual(completedPrompt.response?.kind, "close")
+        expectEqual(completedPrompt.response?.value, "@CLOSED")
+        expectEqual(try store.get(scheduled.id).status, "scheduled")
+        expectEqual(try store.cursor(), 5)
+        let replay = try store.perform("completeAll", params: ["requestId": "complete-all-1"], now: 2000)
+        expectEqual(Set(replay["completed"] as? [String] ?? []), Set([plain.id, prompt.id]))
+        expectEqual(try store.cursor(), 5)
+        expectTrue((try store.perform("completeAll", params: ["requestId": "complete-all-2"]))["completed"] as? [String] == [])
+    }
     func testGroupReplacementRetainsAndResolvesEarlierPrompt() throws {
         let a = try send(["group": "build:one", "actions": ["Yes", "No"]])
         let b = try send(["group": "build:one"])

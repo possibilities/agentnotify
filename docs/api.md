@@ -2,7 +2,7 @@
 
 `agentnotify guide --json` is the authoritative operation/parameter contract. `agentnotify --help` and MCP schemas derive from the same catalog.
 
-Operations: send, list, get, status, respond, remove, changes, diagnose, show, heartbeat, preferences, setPreferences, showPreferences, shimStatus, installShim, dismissShimSetup. Modern CLI flags match parameter names (`--actionIndex`, `--expectedRevision`, `--requestId`). An actions value is a JSON string array. The legacy `-action` spelling remains repeatable and comma-separated.
+Operations: send, list, get, status, completeAll, respond, remove, changes, diagnose, show, heartbeat, preferences, setPreferences, showPreferences, shimStatus, installShim, dismissShimSetup. Modern CLI flags match parameter names (`--actionIndex`, `--expectedRevision`, `--requestId`). An actions value is a JSON string array. The legacy `-action` spelling remains repeatable and comma-separated.
 
 `show detached:true` pins the inbox; `detached:false` unpins it while retaining any manual placement and keeping the menu-bar triangle hidden. Omit `detached` to preserve pin state. After an unpinned inbox closes, a fresh opening returns to the anchored popover.
 
@@ -19,6 +19,8 @@ The directory is 0700, the socket 0600, and accepted peers must have the same UI
 Notifications include UUID id, content, ordered actions, optional callbacks, creation/update timestamps (Unix seconds), status, readAt, revision, delivery state, native registration state, and a typed response. Responses distinguish action/reply/body/close/timeout/interrupt and track callback effect running/succeeded/failed/interrupted.
 
 `expectedRevision` gives conditional status/response mutation. A stale client gets revision_conflict and must refetch; the server does not silently overwrite a newer response. One response wins transactionally, even across simultaneous native, inbox, CLI, and MCP actions.
+
+`completeAll` atomically moves every active Inbox notification to Done, marks it read, and returns its IDs in `completed`. An unanswered prompt receives a durable close response so a live legacy waiter receives `@CLOSED`; body callbacks and notification actions never execute. Scheduled, snoozed, removed, superseded, and already completed records remain unchanged. Supply a unique `requestId` so an uncertain retry returns the original completed-ID set without applying the batch twice.
 
 `changes after:0` bootstraps a client using ordered complete notification snapshots. Keep the last cursor, drain hasMore, and resume after disconnect. Apply each snapshot by ID and revision. Historical removal/supersession records remain visible, serving as tombstones. A cursor ahead of the server is rejected; initialize again when changing stores. There is no compaction or retention cutoff yet. Durable request-key retention is likewise unbounded.
 

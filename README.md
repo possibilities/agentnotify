@@ -36,6 +36,7 @@ agentnotify send --title 'Review ready' --message 'Inspect the patch' --group 'r
 agentnotify list --filter unread
 agentnotify list --group 'review:task-123' --query patch
 agentnotify status --id NOTIFICATION_ID --state read --expectedRevision 2
+agentnotify completeAll --requestId 'complete-inbox-unique-123'
 agentnotify respond --id NOTIFICATION_ID --kind action --actionIndex 0
 agentnotify changes --after 0 --limit 100
 agentnotify show --detached true
@@ -55,7 +56,7 @@ Responses echo `id` and carry `{schema_version, ok, data, error}`. See [the API 
 
 ## Durable behavior
 
-Reading is independent of completion. Opening details does not run callbacks. Completion has undo, but reopening cannot undo an answer already sent or an external command already executed. Reusing a group supersedes its earlier active notification. Removal and replacement preserve history.
+Reading is independent of completion. Opening details does not run callbacks. More → Complete All moves every active Inbox notification to Done after confirmation; the matching `completeAll` CLI/MCP operation is atomic, leaves scheduled and snoozed notifications alone, closes unanswered prompts, and never runs body callbacks. Reopening cannot undo an answer already sent or an external command already executed. Reusing a group supersedes its earlier active notification. Removal and replacement preserve history.
 
 SQLite WAL stores notifications, responses, revisions, idempotency keys, and an ordered change feed. Multiple local clients share one app-owned service. Future mobile clients can use these revisions and cursors; remote transport, authentication, account identity, and mobile apps are not implemented.
 

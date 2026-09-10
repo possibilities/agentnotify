@@ -26,6 +26,7 @@ run("arrival_core.compact_fallback") { let suite = ArrivalDeliveryChecks(); suit
 run("arrival_core.native_banner") { let suite = ArrivalDeliveryChecks(); suite.testNativeBannerOwnsVisualArrivalWhenEnabled() }
 run("arrival_core.unknown_settings") { let suite = ArrivalDeliveryChecks(); suite.testUnknownSettingsDeferVisualOwnership() }
 run("StoreTests.testReadAndCompletionSurviveReopen") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testReadAndCompletionSurviveReopen() }
+run("StoreTests.testCompleteAllAtomicallyFinishesOnlyTheInbox") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testCompleteAllAtomicallyFinishesOnlyTheInbox() }
 run("StoreTests.testGroupReplacementRetainsAndResolvesEarlierPrompt") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testGroupReplacementRetainsAndResolvesEarlierPrompt() }
 run("StoreTests.testIdempotencyConflictAndNoDuplicateEffects") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testIdempotencyConflictAndNoDuplicateEffects() }
 run("StoreTests.testConcurrentResponsesHaveOneWinner") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testConcurrentResponsesHaveOneWinner() }
