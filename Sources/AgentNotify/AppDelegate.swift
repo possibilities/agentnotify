@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import NotifyCore
 
@@ -11,7 +12,7 @@ final class InboxPanel: NSPanel {
     override var canBecomeMain: Bool { true }
 }
 
-final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NotifyInterfaceController {
     private var statusItem: NSStatusItem!
     private var popover = NSPopover()
     private var panel: InboxPanel?
@@ -29,6 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var pendingArrivalIDs: [String] = []
     private var arrivalAnchor: NSRect?
     private var openingAnchor: NSRect?
+    private let interfaceInstanceID = UUID().uuidString.lowercased()
+    private var interfaceRevision = 1
+    private var interfaceObservation: AnyCancellable?
+    private var interfaceRequests: [String: (fingerprint: String, result: [String: Any])] = [:]
+    private var interfaceRequestOrder: [String] = []
     private var inboxIsVisible: Bool { popover.isShown || panel?.isVisible == true }
     private lazy var hoverDismissal = PopoverDismissal(
         containsPointer: { [weak self] in
@@ -56,10 +62,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let service = NotifyService(store: try Store(paths: NotifyPaths()))
             let server = try SocketServer(paths: service.store.paths, handler: service.handle)
             self.service = service; self.server = server; model.service = service
+            service.interfaceController = self
+            interfaceObservation = model.objectWillChange.sink { [weak self] in self?.bumpInterfaceRevision() }
             preferencesModel.service = service
             preferencesModel.onChange = { [weak self] preferences in
                 self?.arrivals.style = preferences.arrivalStyle
-                self?.model.showBannerReminder = preferences.showBannerReminder
             }
             preferencesModel.refresh()
             service.onPreferencesChange = { [weak self] in DispatchQueue.main.async { self?.preferencesModel.refresh() } }
@@ -67,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             let native = NativeNotifications(service: service); self.native = native
             native.onAuthorization = { [weak self] in
                 self?.model.authorization = $0
-                self?.model.systemBannersEnabled = self?.native?.bannersEnabled ?? false
+                self?.preferencesModel.systemBannersEnabled = self?.native?.bannersEnabled ?? false
                 self?.presentPendingArrivals()
             }
             native.observeSettings { [weak self] in
@@ -85,14 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             } }
             model.onDetach = { [weak self] in self?.toggleDetached() }
             model.onClose = { [weak self] in self?.closeSurface() }
-            model.onEnable = { [weak self] in self?.native?.enable() }
             model.onPreferences = { [weak self] in self?.showPreferences() }
-            preferencesModel.onSystemSettings = { [weak self] in self?.native?.enable() }
-            model.onDismissBannerReminder = { [weak self] in
-                guard let self else { return }
-                self.preferencesModel.setBannerReminder(false)
-                if let error = self.preferencesModel.error { self.model.error = error }
-            }
+            preferencesModel.onSystemSettings = { [weak self] in self?.native?.openSettings() }
             model.onQuit = { NSApplication.shared.terminate(nil) }
             model.onChangeCount = { [weak self] count in self?.updateStatus(count) }
             model.onOpenArrivals = { [weak self] in
@@ -102,6 +103,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 self.model.markRead(id)
             }
             arrivals.placement = { [weak self] size in self?.arrivalFrame(size) }
+            arrivals.onChange = { [weak self] in self?.bumpInterfaceRevision() }
             arrivals.open = { [weak self] id in
                 // Finish the compact panel's mouse-up before creating a
                 // transient popover, or AppKit can treat it as an outside click.
@@ -208,9 +210,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
     @objc private func toggle() { if popover.isShown || panel?.isVisible == true { closeSurface() } else { show() } }
     private func showPreferences() {
+        let wasVisible = preferencesWindow?.window?.isVisible == true
         if !model.detached { closeSurface() }
-        if preferencesWindow == nil { preferencesWindow = PreferencesWindowController(model: preferencesModel) }
+        if preferencesWindow == nil {
+            preferencesWindow = PreferencesWindowController(model: preferencesModel)
+            preferencesWindow?.onVisibilityChange = { [weak self] in self?.bumpInterfaceRevision() }
+        }
         preferencesWindow?.present()
+        if !wasVisible { bumpInterfaceRevision() }
         native?.refreshSettings()
         if let window = preferencesWindow?.window { offerShimSetup(in: window) }
     }
@@ -233,6 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             if !wasVisible { clearOpeningFocus(); startHoverDismissal() }
             native?.refreshSettings(retryDenied: true)
             if let window = panel { offerShimSetup(in: window) }
+            if !wasVisible { bumpInterfaceRevision() }
             return
         }
         if !wasVisible {
@@ -249,6 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         native?.refreshSettings(retryDenied: true)
         if let window = controller.view.window { offerShimSetup(in: window) }
+        if !wasVisible { bumpInterfaceRevision() }
     }
     private func startHoverDismissal() {
         guard !model.detached, let window = controller.view.window else { return }
@@ -258,12 +267,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if !NSWorkspace.shared.isVoiceOverEnabled, !model.searchVisible { controller.view.window?.makeFirstResponder(nil) }
     }
     private func closeSurface() {
+        let wasVisible = inboxIsVisible
         model.arrivalIDs.removeAll()
         hoverDismissal.stop()
         if usesPanel {
             panel?.orderOut(nil)
             if !model.detached { manuallyPlaced = false }
         } else { popover.performClose(nil) }
+        if wasVisible { bumpInterfaceRevision() }
     }
     func popoverDidClose(_ notification: Notification) {
         model.arrivalIDs.removeAll()
@@ -458,4 +469,146 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         server?.stop(); service?.stop()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    private func bumpInterfaceRevision() {
+        if Thread.isMainThread { interfaceRevision += 1 }
+        else { DispatchQueue.main.async { [weak self] in self?.interfaceRevision += 1 } }
+    }
+
+    func performInterface(_ method: String, params: [String: Any]) throws -> [String: Any] {
+        if Thread.isMainThread { return try performInterfaceOnMain(method, params: params) }
+        return try DispatchQueue.main.sync { try performInterfaceOnMain(method, params: params) }
+    }
+
+    private func performInterfaceOnMain(_ method: String, params: [String: Any]) throws -> [String: Any] {
+        dispatchPrecondition(condition: .onQueue(.main))
+        if method == "uiState" { return try interfaceSnapshot() }
+        let fingerprint = JSON.string(["method": method, "params": params])
+        if let requestID = params["requestId"] as? String, let cached = interfaceRequests[requestID] {
+            guard cached.fingerprint == fingerprint else { throw NotifyError("request_conflict", "requestId was already used for a different interface command.") }
+            return cached.result
+        }
+        if let instance = params["expectedInstanceId"] as? String, instance != interfaceInstanceID {
+            throw NotifyError("revision_conflict", "AgentNotify restarted. Read uiState before controlling the interface.")
+        }
+        if let expected = params["expectedUIRevision"] as? Int, expected != interfaceRevision {
+            throw NotifyError("revision_conflict", "The native interface changed. Read uiState and retry against its current UI revision.")
+        }
+
+        var resultFields: [String: Any] = [:]
+        switch method {
+        case "uiShow":
+            if params["surface"] as? String == "preferences" { showPreferences() }
+            else {
+                if let id = params["id"] as? String {
+                    _ = try service?.store.get(id)
+                    model.reveal(id)
+                }
+                show()
+                if let pinned = params["pinned"] as? Bool, pinned != model.detached { toggleDetached() }
+            }
+        case "uiClose":
+            switch params["surface"] as? String ?? "inbox" {
+            case "preferences": preferencesWindow?.close()
+            case "arrival": arrivals.dismiss()
+            case "all": closeSurface(); preferencesWindow?.close(); arrivals.dismiss()
+            default: closeSurface()
+            }
+        case "uiSetView": try setInterfaceView(params)
+        case "uiNavigate": navigateInterface(params["direction"] as! String)
+        case "uiSetPinned":
+            let pinned = params["pinned"] as! Bool
+            if !inboxIsVisible { show() }
+            if pinned != model.detached { toggleDetached() }
+        case "uiDismissArrival":
+            if let id = params["id"] as? String, arrivals.displayedID != id {
+                throw NotifyError("revision_conflict", "The displayed arrival changed. Read uiState before dismissing it.")
+            }
+            arrivals.dismiss()
+        case "uiCopy":
+            let id = (params["id"] as? String) ?? model.selected
+            guard let id else { throw NotifyError("invalid_state", "Select a notification or supply its exact id before copying.") }
+            let item = try service!.store.get(id)
+            let content = params["content"] as! String
+            let value = content == "id" ? item.id : [item.title, item.subtitle, item.message].filter { !$0.isEmpty }.joined(separator: "\n")
+            NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string)
+            resultFields = ["copied": content, "id": id]
+        default: throw NotifyError("unknown_method", "Unknown interface operation: \(method).")
+        }
+        bumpInterfaceRevision()
+        var result = try interfaceSnapshot()
+        for (key, value) in resultFields { result[key] = value }
+        if let requestID = params["requestId"] as? String {
+            interfaceRequests[requestID] = (fingerprint, result); interfaceRequestOrder.append(requestID)
+            if interfaceRequestOrder.count > 200, let oldest = interfaceRequestOrder.first {
+                interfaceRequestOrder.removeFirst(); interfaceRequests.removeValue(forKey: oldest)
+            }
+        }
+        return result
+    }
+
+    private func setInterfaceView(_ params: [String: Any]) throws {
+        let filter = params["filter"] as? String ?? model.filter
+        let query = params["query"] as? String ?? model.query
+        let group: String? = (params["group"] as? String).map { $0.isEmpty ? nil : $0 } ?? model.group
+        let period = params["period"] as? String ?? model.period
+        let details = params["details"] as? String ?? "preserve"
+        let selected: String?
+        if let id = params["id"] as? String {
+            if id.isEmpty { selected = nil }
+            else {
+                _ = try service?.store.get(id)
+                guard model.matching(filter: filter, query: query, group: group, period: period).contains(where: { $0.id == id }) else { throw NotifyError("invalid_state", "The notification does not match the requested native view.") }
+                selected = details == "collapse" ? nil : id
+            }
+        } else if details == "collapse" { selected = nil }
+        else { selected = model.selected }
+        if details == "expand", selected == nil { throw NotifyError("invalid_state", "Select a notification before expanding details.") }
+        model.filter = filter; model.query = query; model.searchVisible = !query.isEmpty
+        model.group = group; model.period = period; model.selected = selected
+    }
+
+    private func navigateInterface(_ direction: String) {
+        let items = model.visible
+        guard !items.isEmpty else { model.selected = nil; return }
+        let current = model.selected.flatMap { id in items.firstIndex(where: { $0.id == id }) }
+        let index: Int
+        switch direction {
+        case "last": index = items.count - 1
+        case "previous": index = current.map { max(0, $0 - 1) } ?? (items.count - 1)
+        case "next": index = current.map { min(items.count - 1, $0 + 1) } ?? 0
+        default: index = 0
+        }
+        model.selected = items[index].id
+    }
+
+    private func interfaceSnapshot() throws -> [String: Any] {
+        let visible = model.visible
+        let preferencesVisible = preferencesWindow?.window?.isVisible == true
+        let surface: String
+        if inboxIsVisible && preferencesVisible { surface = "multiple" }
+        else if inboxIsVisible { surface = "inbox" }
+        else if preferencesVisible { surface = "preferences" }
+        else { surface = "hidden" }
+        let rows: [[String: Any]] = visible.prefix(100).map { item in
+            ["id": item.id, "title": item.title, "group": item.group, "status": item.status,
+             "read": item.readAt != nil, "revision": item.revision]
+        }
+        var selection: Any = NSNull()
+        if let id = model.selected, let index = visible.firstIndex(where: { $0.id == id }), let item = model.items.first(where: { $0.id == id }) {
+            var selected = try JSON.encode(item)
+            selected["position"] = index + 1; selected["matchingCount"] = visible.count; selected["expanded"] = true
+            selection = selected
+        }
+        let undo: Any = model.undoItem.map { ["id": $0.id, "expectedRevision": $0.revision] as [String: Any] } ?? NSNull()
+        return [
+            "instanceId": interfaceInstanceID, "uiRevision": interfaceRevision, "surface": surface,
+            "inbox": ["visible": inboxIsVisible, "presentation": inboxIsVisible ? (usesPanel ? "panel" : "popover") : "hidden", "pinned": model.detached],
+            "preferencesVisible": preferencesVisible,
+            "view": ["filter": model.filter, "query": model.query, "group": model.group ?? "", "period": model.period],
+            "selection": selection, "matchingCount": visible.count, "visibleItems": rows, "hasMore": visible.count > rows.count,
+            "arrival": ["visible": arrivals.isVisible, "id": arrivals.displayedID ?? "", "newCount": arrivals.newCount],
+            "undo": undo
+        ]
+    }
 }

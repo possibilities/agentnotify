@@ -85,6 +85,22 @@ final class StoreTests: CheckCase {
         expectThrows(try send(["in": "5m", "actions": ["Ship"], "group": "bad"]))
         expectEqual(try store.all().count, 1)
     }
+    func testBatchStatusIsAtomicAndSupportsFriendlySnooze() throws {
+        let first = try send(["title": "First"]), second = try send(["title": "Second"])
+        let references: [[String: Any]] = [["id": first.id, "expectedRevision": 1], ["id": second.id, "expectedRevision": 1]]
+        let read = try store.perform("statusBatch", params: ["items": references, "state": "read", "requestId": "read-all"], now: 1001)
+        expectEqual(read["count"] as? Int, 2)
+        expectEqual(try store.get(first.id).readAt, 1001)
+        expectEqual(try store.get(second.id).readAt, 1001)
+        let stale: [[String: Any]] = [["id": second.id, "expectedRevision": 2], ["id": first.id, "expectedRevision": 1]]
+        expectThrows(try store.perform("statusBatch", params: ["items": stale, "state": "done"], now: 1002))
+        expectEqual(try store.get(second.id).status, "active")
+        _ = try store.perform("statusBatch", params: ["items": references.map { ["id": $0["id"]!, "expectedRevision": 2] }, "state": "snooze", "in": "2h"], now: 1010)
+        expectEqual(try store.get(first.id).snoozedUntil, 8210)
+        expectEqual(try store.get(second.id).snoozedUntil, 8210)
+        expectThrows(try store.perform("status", params: ["id": first.id, "state": "read", "in": "1h"]))
+        expectThrows(try store.perform("statusBatch", params: ["items": references, "state": "snooze", "in": "1h", "until": 9000.0]))
+    }
     func testDeadlineAndSnoozeRemainDurableTasks() throws {
         let item = try send(["actions": ["Yes"], "timeout": 5.0])
         try store.tick(now: 1006)

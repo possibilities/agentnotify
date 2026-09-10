@@ -24,6 +24,7 @@ final class ArrivalPresentation {
     var displayedStyle: ArrivalStyle { model.style }
     var placement: ((NSSize) -> NSRect?)?
     var open: ((String) -> Void)?
+    var onChange: (() -> Void)?
 
     var isVisible: Bool { panel?.isVisible == true }
     var displayedID: String? { isVisible ? model.content.id : nil }
@@ -41,6 +42,7 @@ final class ArrivalPresentation {
         if pressedID == nil || !wasVisible { selectLatest() }
         updateCounts(items)
         if !wasVisible { present() }
+        onChange?()
     }
 
     func refresh(_ items: [NotificationRecord]) {
@@ -134,9 +136,11 @@ final class ArrivalPresentation {
     }
 
     func dismiss() {
+        let changed = isVisible || !order.isEmpty
         generation += 1
         panel?.orderOut(nil)
         order.removeAll(); records.removeAll(); pressedID = nil
+        if changed { onChange?() }
     }
 
     deinit { if let inputMonitor { NSEvent.removeMonitor(inputMonitor) } }

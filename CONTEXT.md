@@ -9,3 +9,5 @@
 **Response** — One durable resolution of the interaction: action, reply, body, close, timeout, or interruption. A response does not prove a disconnected script received stdout. _Avoid_: approval, receipt unless actually established.
 
 **Change** — A monotonically sequenced snapshot committed with each notification mutation. Clients resume from a cursor and use revisions for conditional writes. _Avoid_: cloud sync (there is no remote sync service yet).
+
+**Interface snapshot** — Ephemeral semantic state of the local native UI: surfaces, filters, selection, pinning, and custom arrival. It has an app-launch instance ID and UI revision, but is never part of the durable notification change feed. _Avoid_: screenshot, accessibility tree, durable UI state.

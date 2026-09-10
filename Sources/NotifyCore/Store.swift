@@ -117,6 +117,18 @@ public final class Store {
                 completed.append(item.id)
             }
             return ["completed": completed]
+        case "statusBatch":
+            let references = p["items"] as! [[String: Any]]
+            let ids = references.map { $0["id"] as! String }
+            guard Set(ids).count == ids.count else { throw NotifyError("invalid_argument", "statusBatch requires unique notification IDs.") }
+            var items: [[String: Any]] = []
+            for reference in references {
+                var params: [String: Any] = ["id": reference["id"]!, "state": p["state"]!]
+                if let expected = reference["expectedRevision"] { params["expectedRevision"] = expected }
+                for key in ["until", "in", "at"] where p[key] != nil { params[key] = p[key] }
+                items.append(try mutate(params, now))
+            }
+            return ["items": items, "count": items.count]
         case "respond": return try respond(p, now)
         case "remove":
             let group = p["group"] as! String
@@ -192,7 +204,12 @@ public final class Store {
             item.status = "active"; item.snoozedUntil = nil
         case "snooze":
             guard item.status == "active", !item.interactive || item.response != nil else { throw NotifyError("invalid_state", "Answer or close a waiting prompt before snoozing it.") }
-            guard let until = p["until"] as? Double, until > now else { throw NotifyError("invalid_argument", "until must be a future Unix timestamp.") }
+            let until: Double
+            if let timestamp = p["until"] as? Double { until = timestamp }
+            else if let delay = p["in"] as? String { until = now + (try Schedule.duration(delay)) }
+            else if let at = p["at"] as? String { until = try Schedule.date(at, now: Date(timeIntervalSince1970: now)).timeIntervalSince1970 }
+            else { throw NotifyError("invalid_argument", "Snooze requires until, in, or at.") }
+            guard until > now else { throw NotifyError("invalid_argument", "Snooze time must be in the future.") }
             item.status = "snoozed"; item.presentable = true; item.snoozedUntil = until; item.nativeRegistered = false; item.delivery = "pending"
         default: throw NotifyError("invalid_argument", "Unknown state.")
         }

@@ -1,14 +1,8 @@
 public enum ArrivalDeliveryPolicy {
-    /// Chooses the compact in-app arrival surface only when macOS cannot own
-    /// the visual arrival. Unknown authorization is held until settings load.
-    public static func shouldShowCompact(authorization: String, alertsEnabled: Bool) -> Bool {
-        switch authorization {
-        case "authorized", "provisional":
-            return !alertsEnabled
-        case "denied", "not-determined":
-            return true
-        default:
-            return false
-        }
+    /// AgentNotify's own arrival is the primary presentation. Native banners
+    /// are an optional additional projection and may be hidden by Focus,
+    /// screen sharing, or other system presentation policy.
+    public static func shouldShowCompact(authorization _: String, alertsEnabled _: Bool) -> Bool {
+        true
     }
 }

@@ -154,11 +154,17 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
             return json.loads(mcp.stdout.readline())
         check(mcp_call(1, 'initialize', {'protocolVersion': '2025-06-18'})['result']['serverInfo']['name'] == 'agentnotify', 'MCP initialize')
         tools = mcp_call(2, 'tools/list')['result']['tools']
-        check({t['name'] for t in tools} == {'send','list','get','status','completeAll','respond','remove','changes','diagnose','show','heartbeat','preferences','setPreferences','showPreferences','shimStatus','installShim','dismissShimSetup'}, 'MCP parity catalog')
+        check({t['name'] for t in tools} == {'send','list','get','status','statusBatch','completeAll','respond','remove','changes','diagnose','show','heartbeat','preferences','setPreferences','showPreferences','shimStatus','installShim','dismissShimSetup','uiState','uiShow','uiClose','uiSetView','uiNavigate','uiSetPinned','uiDismissArrival','uiCopy'}, 'MCP parity catalog')
         result = mcp_call(3, 'tools/call', {'name': 'send', 'arguments': {'message': 'MCP notice', 'group': 'mcp'}})['result']
         check(not result['isError'] and result['structuredContent']['ok'], 'MCP send')
         bad = mcp_call(4, 'tools/call', {'name': 'send', 'arguments': {'message': False}})['result']
         check(bad['isError'], 'MCP validation parity')
+        batch_items = [ok('send', {'message': 'Batch one'}), ok('send', {'message': 'Batch two'})]
+        references = [{'id': item['id'], 'expectedRevision': item['revision']} for item in batch_items]
+        batch = mcp_call(5, 'tools/call', {'name': 'statusBatch', 'arguments': {'items': references, 'state': 'read', 'requestId': 'mcp-read-all'}})['result']
+        check(not batch['isError'] and batch['structuredContent']['data']['count'] == 2, 'MCP batch status')
+        check(all(ok('get', {'id': item['id']})['readAt'] is not None for item in batch_items), 'batch marks every exact notification read')
+        check(mcp_call(6, 'tools/call', {'name': 'uiState'})['result']['isError'], 'headless MCP refuses native UI control')
         bulk_plain = ok('send', {'message': 'bulk completion'})
         bulk_prompt = ok('send', {'message': 'bulk prompt', 'actions': ['Keep Working']})
         completed = mcp_call(20, 'tools/call', {'name': 'completeAll', 'arguments': {'requestId': 'bulk-mcp'}})['result']
@@ -172,9 +178,9 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         check(initial_preferences == {'arrivalStyle': 'queue-peek', 'showBannerReminder': True, 'revision': 1}, 'default preferences')
         selected = cli('setPreferences', '--arrivalStyle', 'compact-toast', '--expectedRevision', '1', '--requestId', 'pref-cli')
         check(selected.returncode == 0 and json.loads(selected.stdout)['data']['arrivalStyle'] == 'compact-toast', 'CLI preference write')
-        read_preferences = mcp_call(5, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
+        read_preferences = mcp_call(7, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
         check(read_preferences == ok('preferences') and read_preferences['revision'] == 2, 'MCP and socket observe CLI choice')
-        changed = mcp_call(6, 'tools/call', {'name': 'setPreferences', 'arguments': {'arrivalStyle': 'queue-shelf', 'expectedRevision': 2, 'requestId': 'pref-mcp'}})['result']
+        changed = mcp_call(8, 'tools/call', {'name': 'setPreferences', 'arguments': {'arrivalStyle': 'queue-shelf', 'expectedRevision': 2, 'requestId': 'pref-mcp'}})['result']
         check(not changed['isError'] and changed['structuredContent']['data']['revision'] == 3, 'MCP preference write')
         check(json.loads(cli('preferences').stdout)['data']['arrivalStyle'] == 'queue-shelf', 'CLI observes MCP choice')
         check(api('setPreferences', {'arrivalStyle': 'queue-peek', 'expectedRevision': 2})['error']['code'] == 'revision_conflict', 'stale preference revision rejected')
@@ -184,21 +190,21 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         check(ok('shimStatus')['promptHandled'] is False, 'shim offer begins pending')
         shim_path = ok('shimStatus')['path']
         check('shim-home' in shim_path and shim_path.startswith(tmp), 'shim operations isolate the install destination')
-        handled = mcp_call(7, 'tools/call', {'name': 'dismissShimSetup'})['result']
+        handled = mcp_call(9, 'tools/call', {'name': 'dismissShimSetup'})['result']
         check(not handled['isError'], 'MCP can dismiss shim offer')
         check(json.loads(cli('shimStatus').stdout)['data']['promptHandled'], 'CLI sees dismissed shim offer')
         if ok('shimStatus')['available']:
             installed = cli('installShim')
             check(installed.returncode == 0 and json.loads(installed.stdout)['data']['installed'], 'CLI installs shim only in disposable destination')
-            observed = mcp_call(8, 'tools/call', {'name': 'shimStatus'})['result']['structuredContent']['data']
+            observed = mcp_call(10, 'tools/call', {'name': 'shimStatus'})['result']['structuredContent']['data']
             check(observed['installed'] and observed['path'] == shim_path, 'MCP sees CLI shim installation')
         else:
             check(api('installShim')['error']['code'] == 'installer_unavailable', 'missing owner is reported without installation')
         check(ok('diagnose')['cursor'] == preference_cursor, 'shim setup does not emit notification changes')
         reminder = cli('setPreferences', '--showBannerReminder', 'false', '--expectedRevision', '3')
-        check(reminder.returncode == 0 and not json.loads(reminder.stdout)['data']['showBannerReminder'], 'CLI hides banner reminder')
-        reminder_read = mcp_call(9, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
-        check(reminder_read == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'revision': 4}, 'MCP observes independent banner reminder preference')
+        check(reminder.returncode == 0 and not json.loads(reminder.stdout)['data']['showBannerReminder'], 'CLI hides optional-banner caution')
+        reminder_read = mcp_call(11, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
+        check(reminder_read == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'revision': 4}, 'MCP observes independent optional-banner caution preference')
         check(cli('setPreferences', '--showBannerReminder', 'invalid').returncode == 2, 'invalid reminder preference rejected')
         check(api('setPreferences', {'expectedRevision': 4})['error']['code'] == 'invalid_argument', 'empty preference change rejected')
         mcp.stdin.close(); mcp.wait(timeout=5)

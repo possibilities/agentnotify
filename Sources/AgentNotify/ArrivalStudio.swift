@@ -349,12 +349,6 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
             self.state.pinned.toggle()
             self.updatePin()
         }
-        model.onEnable = {
-            let alert = NSAlert()
-            alert.messageText = "Synthetic notifications"
-            alert.informativeText = "This studio uses sample data. System notification settings are available in the installed AgentNotify app."
-            alert.runModal()
-        }
         model.onChangeCount = { [weak self, weak model] count in
             self?.state.arrival.content.waitingCount = count
             self?.state.arrival.content.unreadCount = model?.unreadCount ?? 0
