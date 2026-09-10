@@ -55,7 +55,6 @@ struct InboxDragRegion: NSViewRepresentable {
 struct InboxView: View {
     @ObservedObject var model: InboxModel
     @FocusState private var searchFocused: Bool
-    @State private var confirmingCompleteAll = false
     var body: some View {
         VStack(spacing: 0) {
             controls
@@ -133,7 +132,7 @@ struct InboxView: View {
         .tint(.primary)
         .ignoresSafeArea(.container, edges: .top)
         .onExitCommand { if model.searchVisible { model.query = ""; model.searchVisible = false } else if model.selected != nil { model.selected = nil } else { model.onClose?() } }
-        .alert(completeAllTitle, isPresented: $confirmingCompleteAll) {
+        .alert(completeAllTitle, isPresented: $model.confirmingCompleteAll) {
             Button("Cancel", role: .cancel) {}
             Button("Complete All", role: .destructive) { model.completeAll() }
         } message: {
@@ -172,7 +171,7 @@ struct InboxView: View {
             Menu {
                 Button("Mark All Read") { model.markAllRead() }
                     .disabled(!model.visible.contains { $0.readAt == nil })
-                Button("Complete All…") { confirmingCompleteAll = true }
+                Button("Complete All…") { model.confirmingCompleteAll = true }
                     .disabled(model.inboxCount == 0)
                 Divider()
                 Button("Close Inbox") { model.onClose?() }

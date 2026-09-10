@@ -8,8 +8,6 @@ public final class NotifyService {
     public var onShowPreferences: (() -> Void)?
     public weak var interfaceController: NotifyInterfaceController?
     public var onPreferencesChange: (() -> Void)?
-    public var nativeInfo: (() -> [String: Any])?
-    public var nativeList: ((Bool) throws -> Set<String>)?
     private var timer: DispatchSourceTimer?
     public init(store: Store, shim: NotificationShim = NotificationShim()) { self.store = store; self.shim = shim }
     public func start() throws {
@@ -67,17 +65,8 @@ public final class NotifyService {
             guard let interfaceController else { throw NotifyError("native_unavailable", "This is a headless service. Open AgentNotify.app to control its native interface.") }
             return try interfaceController.performInterface(method, params: params)
         }
-        if method == "list", let filter = params["filter"] as? String, ["delivered", "pending"].contains(filter), let nativeList {
-            let ids = try nativeList(filter == "pending")
-            let query = params["query"] as? String ?? ""
-            let items = try store.all().filter { ids.contains($0.id) && (params["group"] == nil || $0.group == params["group"] as? String) && $0.createdAt >= (params["since"] as? Double ?? 0) && $0.createdAt < (params["before"] as? Double ?? .greatestFiniteMagnitude) && (query.isEmpty || [$0.title, $0.subtitle, $0.message, $0.group].joined(separator: " ").localizedCaseInsensitiveContains(query)) }.sorted { filter == "pending" ? ($0.snoozedUntil ?? $0.scheduledAt ?? 0) < ($1.snoozedUntil ?? $1.scheduledAt ?? 0) : $0.createdAt > $1.createdAt }
-            let offset = params["offset"] as? Int ?? 0, limit = params["limit"] as? Int ?? 100
-            let page = try JSON.boundedPage(items.dropFirst(offset).prefix(limit).map { try JSON.encode($0) })
-            return ["items": page, "total": items.count, "cursor": try store.cursor(), "hasMore": offset + page.count < items.count]
-        }
         var result = try store.perform(method, params: params)
-        if method == "send", nativeInfo == nil, let id = result["id"] as? String { try store.updateDelivery(id: id, state: "inbox-only", error: result["deliveryError"] as? String, registered: false); result = try JSON.encode(store.get(id)) }
-        if method == "diagnose" { result["native"] = nativeInfo?() ?? ["available": false, "authorization": "headless", "note": "Durable inbox works; this service does not deliver system notifications."] }
+        if method == "diagnose" { result["native"] = ["available": false, "authorization": "disabled", "note": "AgentNotify deliberately does not deliver macOS system banners."] }
         let claim = result.removeValue(forKey: "effectClaim") as? Bool ?? false
         if ["setPreferences", "dismissShimSetup"].contains(method) { onPreferencesChange?() }
         else if method != "heartbeat", Catalog.operations.first(where: { $0.name == method })?.mutates == true { onChange?() }

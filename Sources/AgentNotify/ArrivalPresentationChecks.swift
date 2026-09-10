@@ -79,7 +79,55 @@ enum ArrivalPresentationChecks {
             try require(presenter.displayedStyle == next, "The next arrival did not adopt the saved preference.")
         }
         try require(try store.cursor() == cursor, "Style preferences mutated notification state.")
-        return ["arrival does not activate or take focus", "bursts reuse one panel and show the latest arrival", "unattended preview remains until dismissal", "open passes displayed identity without a durable mutation", "explicit dismissal allows the next arrival", "withdrawal hides stale presentation", "group replacement advances to the latest eligible arrival", "summary distinguishes unread from read items still needing attention", "all three designs share one nonactivating panel at their intended dimensions", "preference changes preserve the active panel and apply to the next presentation"]
+
+        presenter.dismiss()
+        let marker = root.appendingPathComponent("completion-must-not-run")
+        let ordinary = try JSON.decode(NotificationRecord.self, store.perform("send", params: [
+            "title": "First in burst", "message": "Keep this one visible after completing the latest."
+        ]))
+        let prompt = try JSON.decode(NotificationRecord.self, store.perform("send", params: [
+            "title": "Latest prompt", "message": "Completing closes this without running its callback.",
+            "actions": ["Run"], "execute": "touch \(marker.path)"
+        ]))
+        presenter.receive([ordinary, prompt], items: try store.all())
+        try require(presenter.displayedID == prompt.id && presenter.newCount == 2,
+            "Completion check did not begin on the latest burst item.")
+
+        presenter.complete = { item in
+            do {
+                _ = try store.perform("status", params: [
+                    "id": item.id, "state": "done", "expectedRevision": item.revision + 1
+                ])
+                return try store.all()
+            } catch { return nil }
+        }
+        presenter.completeDisplayed()
+        let unchangedPrompt = try store.get(prompt.id)
+        try require(presenter.isVisible && presenter.displayedID == prompt.id && presenter.newCount == 2
+                    && unchangedPrompt.status == "active",
+            "A failed completion changed or dismissed the compact preview.")
+
+        presenter.complete = { item in
+            do {
+                _ = try store.perform("status", params: [
+                    "id": item.id, "state": "done", "expectedRevision": item.revision
+                ])
+                return try store.all()
+            } catch { return nil }
+        }
+        presenter.completeDisplayed()
+        let completedPrompt = try store.get(prompt.id)
+        try require(presenter.isVisible && presenter.displayedID == ordinary.id && presenter.newCount == 1,
+            "Completing the latest burst item did not advance the compact preview.")
+        try require(completedPrompt.status == "done" && completedPrompt.response?.kind == "close"
+                    && completedPrompt.response?.effect == nil && !FileManager.default.fileExists(atPath: marker.path),
+            "Compact completion did not durably close the prompt without executing callbacks.")
+        presenter.completeDisplayed()
+        let completedOrdinary = try store.get(ordinary.id)
+        try require(!presenter.isVisible && completedOrdinary.status == "done",
+            "Completing the final burst item did not dismiss the compact preview.")
+
+        return ["arrival does not activate or take focus", "bursts reuse one panel and show the latest arrival", "unattended preview remains until dismissal", "open passes displayed identity without a durable mutation", "explicit dismissal allows the next arrival", "withdrawal hides stale presentation", "group replacement advances to the latest eligible arrival", "summary distinguishes unread from read items still needing attention", "all three designs share one nonactivating panel at their intended dimensions", "preference changes preserve the active panel and apply to the next presentation", "failed compact completion leaves the notification visible", "compact completion closes prompts without callbacks, advances bursts, and dismisses the final item"]
     }
 }
 #endif

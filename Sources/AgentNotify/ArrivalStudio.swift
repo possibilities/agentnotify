@@ -85,7 +85,7 @@ private enum ArrivalStudioScenario: String, CaseIterable, Identifiable {
             )
         case .long:
             return ArrivalContent(
-                id: "studio-long", title: "Research synthesis needs your review", subtitle: "Native notifications",
+                id: "studio-long", title: "Research synthesis needs your review", subtitle: "AgentNotify workflow",
                 message: "The design agency compared interruption levels, queue visibility, reduced motion, and the transition into the durable inbox.",
                 group: "Design studio", newCount: 1, unreadCount: 10, waitingCount: 12
             )
@@ -340,7 +340,6 @@ private final class ArrivalStudioDelegate: NSObject, NSApplicationDelegate, NSWi
 
     private func makeSyntheticInbox() throws {
         let model = InboxModel()
-        model.authorization = "authorized"
         model.detached = true
         model.presentedAsPanel = true
         model.onClose = { [weak self] in self?.hideSurfaces() }

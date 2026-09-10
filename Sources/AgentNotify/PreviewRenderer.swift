@@ -11,7 +11,7 @@ enum PreviewRenderer {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("an-render-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
         let store = try Store(paths: NotifyPaths(root: root)), model = InboxModel()
-        model.service = NotifyService(store: store); model.authorization = "authorized"
+        model.service = NotifyService(store: store)
         let now = Date().timeIntervalSince1970
         let samples: [[String: Any]] = [
             ["title": "Build finished", "message": "All checks passed. The app is ready for a closer look.", "group": "agentnotify:build", "execute": "/usr/bin/true"],
@@ -43,20 +43,10 @@ enum PreviewRenderer {
         window.close()
         let preferences = PreferencesModel()
         preferences.service = model.service
-        preferences.onSystemSettings = {}
         let preferencesWindow = PreferencesWindowController(model: preferences)
         for theme in ["light", "dark"] {
             preferencesWindow.window?.appearance = NSAppearance(named: theme == "light" ? .aqua : .darkAqua)
             preferences.select(.queuePeek)
-            preferences.systemBannersEnabled = false
-            if let window = preferencesWindow.window {
-                try capture(window, output.appendingPathComponent("\(theme)-preferences-banners-off.png"), width: 512, height: 688)
-            }
-            preferences.systemBannersEnabled = true
-            if let window = preferencesWindow.window {
-                try capture(window, output.appendingPathComponent("\(theme)-preferences-banners-on.png"), width: 512, height: 688)
-            }
-            preferences.systemBannersEnabled = false
             for style in ArrivalStyle.allCases {
                 preferences.select(style)
                 if let window = preferencesWindow.window {

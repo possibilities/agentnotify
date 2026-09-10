@@ -61,16 +61,6 @@ func runCLI(_ args: [String]) -> Int32 {
         if invocation.method == "remove" { stderr("Removed \((data["removed"] as? [String])?.count ?? 0) notification(s); history retained."); return 0 }
         guard invocation.method == "send" else { return 0 }
         var item = try JSON.decode(NotificationRecord.self, data)
-        let registrationDeadline = Date().addingTimeInterval(10)
-        while item.delivery == "pending" && Date() < registrationDeadline {
-            if item.interactive { _ = try? client.result("heartbeat", ["id": item.id, "waiterId": waiter]) }
-            Thread.sleep(forTimeInterval: 0.05); item = try JSON.decode(NotificationRecord.self, client.result("get", ["id": item.id]))
-        }
-        if ["denied", "failed", "pending"].contains(item.delivery), item.interactive { _ = try? client.result("respond", ["id": item.id, "kind": "interrupt"]) }
-        if item.delivery == "denied" { stderr("Optional macOS banners are off. Saved to AgentNotify as \(item.id)."); return 3 }
-        if item.delivery == "failed" { stderr("Native delivery failed: \(item.deliveryError ?? "unknown error"). Saved as \(item.id)."); return 5 }
-        if item.delivery == "pending" { stderr("Native registration timed out. Saved to inbox as \(item.id)."); return 4 }
-        if item.delivery == "inbox-only" { stderr("Saved to the headless inbox; system notifications are unavailable.") }
         if let error = item.deliveryError { stderr(error) }
         if let due = item.scheduledAt { stderr("Scheduled for \(Date(timeIntervalSince1970: due))."); return 0 }
         guard item.interactive else { return 0 }

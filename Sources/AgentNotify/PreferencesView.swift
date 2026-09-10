@@ -8,7 +8,7 @@ final class PreferencesModel: ObservableObject {
     @Published private(set) var shimInstalled = false
     @Published private(set) var shimAvailable = false
     @Published private(set) var installingShim = false
-    @Published var systemBannersEnabled = false
+    @Published var shortcutError: String?
     let preview = ArrivalViewModel(content: ArrivalContent(
         id: "preferences-sample", title: "Build finished", subtitle: "AgentNotify",
         message: "All checks passed. The next step is ready when you are.",
@@ -16,12 +16,27 @@ final class PreferencesModel: ObservableObject {
     ))
     var service: NotifyService?
     var onChange: ((AppPreferences) -> Void)?
-    var onSystemSettings: (() -> Void)?
+    var onApplyShortcut: ((GlobalShortcut?) -> String?)?
+    var activeShortcut: (() -> GlobalShortcut?)?
 
     func refresh() {
         do {
             guard let service else { return }
-            let value = try service.store.preferences()
+            var value = try service.store.preferences()
+            if let registrationError = onApplyShortcut?(value.completeAllShortcut) {
+                shortcutError = registrationError
+                let active = activeShortcut?()
+                if active != value.completeAllShortcut {
+                    let encoded: Any = active.map {
+                        ["keyCode": $0.keyCode, "key": $0.key, "modifiers": $0.modifiers]
+                    } ?? NSNull()
+                    value = try JSON.decode(AppPreferences.self, service.store.perform("setPreferences", params: [
+                        "completeAllShortcut": encoded,
+                        "expectedRevision": value.revision,
+                        "requestId": UUID().uuidString,
+                    ]))
+                }
+            } else { shortcutError = nil }
             current = value
             preview.style = value.arrivalStyle
             let shim = try service.call("shimStatus")
@@ -61,6 +76,15 @@ final class PreferencesModel: ObservableObject {
     func select(_ style: ArrivalStyle) {
         guard style != current.arrivalStyle else { return }
         update(["arrivalStyle": style.rawValue])
+    }
+
+    func setCompleteAllShortcut(_ shortcut: GlobalShortcut?) {
+        if let error = onApplyShortcut?(shortcut) {
+            shortcutError = error
+            return
+        }
+        let value: Any = shortcut.map { ["keyCode": $0.keyCode, "key": $0.key, "modifiers": $0.modifiers] } ?? NSNull()
+        update(["completeAllShortcut": value])
     }
 
     private func update(_ changes: [String: Any]) {
@@ -113,6 +137,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
 struct PreferencesView: View {
     @ObservedObject var model: PreferencesModel
+    @State private var recordingShortcut = false
 
     var body: some View {
         ScrollView {
@@ -120,20 +145,7 @@ struct PreferencesView: View {
             Text("Appearance").font(.system(size: 18, weight: .semibold))
             arrivalAppearance
             Divider().opacity(0.5)
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Optional macOS banners").font(.system(size: 13, weight: .semibold))
-                    Spacer()
-                    if model.systemBannersEnabled {
-                        Button("Turn Off in System Settings…") { model.onSystemSettings?() }.disabled(model.onSystemSettings == nil)
-                    }
-                }
-                Label(model.systemBannersEnabled ? "macOS banners are on" : "macOS banners are off — recommended",
-                    systemImage: model.systemBannersEnabled ? "bell.badge" : "bell.slash")
-                    .font(.system(size: 12, weight: .medium))
-                Text("AgentNotify uses its own arrivals. macOS banners can duplicate them and may be hidden by Focus, screen sharing, or remote-control sessions.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            }
+            completeAllShortcut
             Divider().opacity(0.5)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -161,6 +173,40 @@ struct PreferencesView: View {
         .tint(.primary)
     }
 
+    private var completeAllShortcut: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Keyboard").font(.system(size: 13, weight: .semibold))
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Complete All").font(.system(size: 12, weight: .medium))
+                    Text("Works from any app and opens the count-aware confirmation.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Button(recordingShortcut ? "Press shortcut…" : (model.current.completeAllShortcut?.displayName ?? "Record Shortcut")) {
+                    recordingShortcut.toggle()
+                }
+                if model.current.completeAllShortcut != nil {
+                    Button("Clear") { recordingShortcut = false; model.setCompleteAllShortcut(nil) }
+                }
+            }
+            Text(shortcutHelp)
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            if let error = model.shortcutError {
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            ShortcutCaptureView(recording: $recordingShortcut, captured: model.setCompleteAllShortcut)
+                .frame(width: 0, height: 0)
+        }
+    }
+
+    private var shortcutHelp: String {
+        if recordingShortcut { return "Press a key with at least two of ⌃⌥⇧⌘. Bare Escape cancels; bare Delete clears." }
+        if model.current.completeAllShortcut != nil { return "Use Clear to remove this shortcut." }
+        return "No shortcut assigned. New installs default to ⌥⇧⌘D."
+    }
+
     private var arrivalAppearance: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Arrival style").font(.system(size: 13, weight: .semibold))
@@ -179,7 +225,7 @@ struct PreferencesView: View {
                     .accessibilityLabel("Visual sample of \(model.current.arrivalStyle.title)")
                     .frame(maxWidth: .infinity, minHeight: 144, alignment: .top)
             }
-            Text("Applies to new AgentNotify arrivals, independently of macOS banners.")
+            Text("Applies to new AgentNotify arrivals.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
         }
     }

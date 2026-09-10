@@ -77,7 +77,11 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         check(cli('-message', 'bad', '-open', '/tmp/no-scheme').returncode == 2, 'URL validation')
         piped = cli('-group', 'piped', input='Hello\nWorld\r\n')
         check(piped.returncode == 0 and piped.stdout == '', 'piped silent success')
-        check(group('piped')[0]['message'] == 'Hello\nWorld', 'piped exact body')
+        piped_item = group('piped')[0]
+        check(piped_item['message'] == 'Hello\nWorld', 'piped exact body')
+        check(piped_item['delivery'] == 'accepted' and not piped_item['nativeRegistered'], 'send is accepted without system registration')
+        native_policy = ok('diagnose')['native']
+        check(native_policy['authorization'] == 'disabled' and not native_policy['available'], 'diagnose reports AgentNotify-only presentation')
         kept = ok('send', {'message': 'Keep on invalid replacement', 'group': 'atomic-old'})
         failed = cli('-remove', 'atomic-old', '-message', 'Invalid', '-open', '/invalid')
         check(failed.returncode == 2 and ok('get', {'id': kept['id']})['status'] == 'active', 'invalid replacement preserves old notification')
@@ -175,7 +179,8 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         check(empty_complete.returncode == 0 and json.loads(empty_complete.stdout)['data']['completed'] == [], 'CLI observes the same complete all contract')
         preference_cursor = ok('diagnose')['cursor']
         initial_preferences = ok('preferences')
-        check(initial_preferences == {'arrivalStyle': 'queue-peek', 'showBannerReminder': True, 'revision': 1}, 'default preferences')
+        default_shortcut = {'keyCode': 2, 'key': 'D', 'modifiers': ['option', 'shift', 'command']}
+        check(initial_preferences == {'arrivalStyle': 'queue-peek', 'showBannerReminder': False, 'completeAllShortcut': default_shortcut, 'revision': 1}, 'default preferences')
         selected = cli('setPreferences', '--arrivalStyle', 'compact-toast', '--expectedRevision', '1', '--requestId', 'pref-cli')
         check(selected.returncode == 0 and json.loads(selected.stdout)['data']['arrivalStyle'] == 'compact-toast', 'CLI preference write')
         read_preferences = mcp_call(7, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
@@ -183,6 +188,16 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         changed = mcp_call(8, 'tools/call', {'name': 'setPreferences', 'arguments': {'arrivalStyle': 'queue-shelf', 'expectedRevision': 2, 'requestId': 'pref-mcp'}})['result']
         check(not changed['isError'] and changed['structuredContent']['data']['revision'] == 3, 'MCP preference write')
         check(json.loads(cli('preferences').stdout)['data']['arrivalStyle'] == 'queue-shelf', 'CLI observes MCP choice')
+        shortcut = {'keyCode': 53, 'key': '⎋', 'modifiers': ['control', 'command']}
+        shortcut_write = cli('setPreferences', '--completeAllShortcut', json.dumps(shortcut), '--expectedRevision', '3', '--requestId', 'shortcut-cli')
+        check(shortcut_write.returncode == 0 and json.loads(shortcut_write.stdout)['data']['completeAllShortcut'] == shortcut, 'CLI assigns Complete All shortcut')
+        shortcut_read = mcp_call(21, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
+        check(shortcut_read['completeAllShortcut'] == shortcut and shortcut_read['revision'] == 4, 'MCP observes CLI shortcut assignment')
+        shortcut_clear = mcp_call(22, 'tools/call', {'name': 'setPreferences', 'arguments': {'completeAllShortcut': None, 'expectedRevision': 4, 'requestId': 'shortcut-mcp-clear'}})['result']
+        check(not shortcut_clear['isError'] and shortcut_clear['structuredContent']['data']['revision'] == 5, 'MCP clears Complete All shortcut')
+        check(json.loads(cli('preferences').stdout)['data']['completeAllShortcut'] is None, 'CLI observes MCP shortcut clearing')
+        check(api('setPreferences', {'completeAllShortcut': {'keyCode': 2, 'key': 'D', 'modifiers': ['command']}})['error']['code'] == 'invalid_argument', 'shortcut requires multiple modifiers')
+        check(cli('setPreferences', '--completeAllShortcut', '[]').returncode == 2, 'CLI rejects malformed shortcut JSON shape')
         check(api('setPreferences', {'arrivalStyle': 'queue-peek', 'expectedRevision': 2})['error']['code'] == 'revision_conflict', 'stale preference revision rejected')
         check(cli('setPreferences', '--arrivalStyle', 'unknown').returncode == 2, 'invalid preference rejected')
         check(api('showPreferences')['error']['code'] == 'native_unavailable', 'headless preferences presentation refused')
@@ -201,19 +216,21 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         else:
             check(api('installShim')['error']['code'] == 'installer_unavailable', 'missing owner is reported without installation')
         check(ok('diagnose')['cursor'] == preference_cursor, 'shim setup does not emit notification changes')
-        reminder = cli('setPreferences', '--showBannerReminder', 'false', '--expectedRevision', '3')
-        check(reminder.returncode == 0 and not json.loads(reminder.stdout)['data']['showBannerReminder'], 'CLI hides optional-banner caution')
+        reminder = cli('setPreferences', '--showBannerReminder', 'true', '--expectedRevision', '5')
+        check(reminder.returncode == 0 and json.loads(reminder.stdout)['data']['showBannerReminder'], 'CLI retains deprecated banner field for compatibility')
         reminder_read = mcp_call(11, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
-        check(reminder_read == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'revision': 4}, 'MCP observes independent optional-banner caution preference')
+        check(reminder_read == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': True, 'completeAllShortcut': None, 'revision': 6}, 'MCP observes deprecated compatibility preference')
+        retired_clear = cli('setPreferences', '--showBannerReminder', 'false', '--expectedRevision', '6')
+        check(retired_clear.returncode == 0 and not json.loads(retired_clear.stdout)['data']['showBannerReminder'], 'deprecated field can be restored to its inert default')
         check(cli('setPreferences', '--showBannerReminder', 'invalid').returncode == 2, 'invalid reminder preference rejected')
-        check(api('setPreferences', {'expectedRevision': 4})['error']['code'] == 'invalid_argument', 'empty preference change rejected')
+        check(api('setPreferences', {'expectedRevision': 7})['error']['code'] == 'invalid_argument', 'empty preference change rejected')
         mcp.stdin.close(); mcp.wait(timeout=5)
         # Persisted state and resumable change stream survive a full service restart.
         before = ok('diagnose')
         first = ok('changes', {'after': 0, 'limit': 2})
         check(first['hasMore'] and len(first['changes']) == 2, 'change pagination')
         stop(); start()
-        check(ok('preferences') == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'revision': 4}, 'preferences survive service restart')
+        check(ok('preferences') == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'completeAllShortcut': None, 'revision': 7}, 'preferences survive service restart')
         check(ok('shimStatus')['promptHandled'], 'shim offer choice survives service restart')
         check(ok('diagnose')['total'] == before['total'], 'durable records after restart')
         check(ok('get', {'id': conflict['id']})['readAt'] is not None, 'durable read state')

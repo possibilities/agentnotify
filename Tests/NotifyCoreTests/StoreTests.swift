@@ -150,6 +150,54 @@ final class StoreTests: CheckCase {
         expectTrue(missing.deliveryError != nil)
         expectTrue(missing.isInbox)
     }
+    func testLegacySystemDeliveryIsNormalizedWithoutHidingContentWarnings() throws {
+        let current = try send(["message": "Current banner error", "requestId": "legacy-send"])
+        try store.seedLegacySystemDeliveryForChecks(id: current.id, state: "denied",
+            error: "Optional macOS banners are off. This item remains available in AgentNotify.", registered: false)
+        let original = try send(["message": "Original banner error"])
+        try store.seedLegacySystemDeliveryForChecks(id: original.id, state: "denied",
+            error: "Enable notifications to show system banners. This item is saved in your inbox.", registered: false)
+        let warning = try send(["message": "Content warning"])
+        try store.seedLegacySystemDeliveryForChecks(id: warning.id, state: "failed",
+            error: "Image unavailable: test fixture", registered: true)
+        let batchItem = try send(["message": "Cached batch banner error"])
+        let batchParams: [String: Any] = [
+            "items": [["id": batchItem.id]],
+            "state": "read",
+            "requestId": "legacy-status-batch",
+        ]
+        _ = try store.perform("statusBatch", params: batchParams, now: 1001)
+        try store.seedLegacySystemDeliveryForChecks(id: batchItem.id, state: "pending",
+            error: "Waiting for native delivery.", registered: true)
+
+        let cursor = try store.cursor()
+        let currentRevision = try store.get(current.id).revision
+        store = try Store(paths: NotifyPaths(root: root))
+        for id in [current.id, original.id] {
+            let item = try store.get(id)
+            expectEqual(item.delivery, "accepted")
+            expectFalse(item.nativeRegistered)
+            expectNil(item.deliveryError)
+        }
+        let preserved = try store.get(warning.id)
+        expectEqual(preserved.delivery, "accepted")
+        expectFalse(preserved.nativeRegistered)
+        expectEqual(preserved.deliveryError, "Image unavailable: test fixture")
+        let replay = try JSON.decode(NotificationRecord.self, store.perform("send", params: [
+            "message": "Current banner error", "requestId": "legacy-send"
+        ]))
+        expectEqual(replay.delivery, "accepted")
+        expectFalse(replay.nativeRegistered)
+        expectNil(replay.deliveryError)
+        expectEqual(replay.revision, currentRevision)
+        let batchReplay = try store.perform("statusBatch", params: batchParams, now: 2000)
+        let replayedBatchItem = try JSON.decode(NotificationRecord.self,
+            (batchReplay["items"] as? [[String: Any]])?.first ?? [:])
+        expectEqual(replayedBatchItem.delivery, "accepted")
+        expectFalse(replayedBatchItem.nativeRegistered)
+        expectNil(replayedBatchItem.deliveryError)
+        expectEqual(try store.cursor(), cursor)
+    }
     func testLargePagesRemainWithinTransportLimit() throws {
         for _ in 0..<20 { _ = try send(["message": String(repeating: "x", count: 60000)]) }
         let page = try store.perform("list", params: ["limit": 100])

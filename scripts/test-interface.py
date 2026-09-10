@@ -70,8 +70,12 @@ with tempfile.TemporaryDirectory(prefix='an-ui-', dir='/tmp') as tmp:
                 break
             time.sleep(.05)
         check(arrival and arrival['visible'], 'custom arrival is represented in UI state')
+        dismissed_id = arrival['id']
         ok('uiDismissArrival', {'id': arrival['id'], 'requestId': 'dismiss-arrival'})
         check(not ok('uiState')['arrival']['visible'], 'custom arrival dismisses without durable mutation')
+        dismissed = ok('get', {'id': dismissed_id})
+        check(dismissed['status'] == 'active' and dismissed.get('readAt') is None and dismissed.get('response') is None,
+              'arrival dismissal preserves unread active task state')
 
         shown = ok('uiShow', {'surface': 'inbox', 'requestId': 'show-inbox'})
         check(shown['surface'] == 'inbox' and shown['inbox']['visible'], 'MCP/API shows native inbox')

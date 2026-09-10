@@ -13,7 +13,7 @@ extension ArrivalStyle {
     var detail: String {
         switch self {
         case .queuePeek: return "A glimpse of your inbox, with context and a waiting count."
-        case .compactToast: return "A smaller banner that leaves more of your screen clear."
+        case .compactToast: return "A smaller preview that leaves more of your screen clear."
         case .queueShelf: return "More room for the message, with a distinct queue footer."
         }
     }
@@ -31,7 +31,16 @@ struct ArrivalSurface: View {
     @ObservedObject var model: ArrivalViewModel
     let open: (String) -> Void
     let dismiss: () -> Void
+    let complete: (() -> Void)?
     @State private var hovered = false
+
+    init(model: ArrivalViewModel, open: @escaping (String) -> Void,
+         dismiss: @escaping () -> Void, complete: (() -> Void)? = nil) {
+        self.model = model
+        self.open = open
+        self.dismiss = dismiss
+        self.complete = complete
+    }
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
@@ -42,7 +51,10 @@ struct ArrivalSurface: View {
                 case .queueShelf: QueueShelfView(content: model.content, open: { open(model.content.id) })
                 }
             }
-            ArrivalDismissButton(action: dismiss)
+            HStack(spacing: 4) {
+                if let complete { ArrivalCompleteButton(action: complete) }
+                ArrivalDismissButton(action: dismiss)
+            }
                 .opacity(hovered ? 0.9 : 0.55)
                 .padding(.top, 9)
                 .padding(.trailing, 9)
@@ -51,6 +63,27 @@ struct ArrivalSurface: View {
         .frame(height: model.style.size.height)
         .onHover { hovered = $0 }
         .accessibilityAction(named: Text("Dismiss preview"), dismiss)
+        .accessibilityActions {
+            if let complete { Button("Complete notification", action: complete) }
+        }
+    }
+}
+
+private struct ArrivalCompleteButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .help("Mark Done")
+        .accessibilityLabel("Complete notification")
+        .accessibilityHint("Moves this notification to Done")
     }
 }
 
@@ -90,7 +123,7 @@ struct CompactToastView: View {
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.trailing, 28)
+            .padding(.trailing, 58)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -114,7 +147,7 @@ struct QueueShelfView: View {
                         .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                     Spacer()
                 }
-                .padding(.trailing, 30)
+                .padding(.trailing, 58)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(content.title).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     Text(content.message).font(.system(size: 13)).foregroundStyle(.secondary).lineLimit(2)

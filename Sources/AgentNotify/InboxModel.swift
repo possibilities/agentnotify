@@ -14,8 +14,8 @@ final class InboxModel: ObservableObject {
     @Published var detached = false
     @Published var presentedAsPanel = false
     @Published var searchVisible = false
-    @Published var authorization = "checking"
     @Published var arrivalIDs: [String] = []
+    @Published var confirmingCompleteAll = false
     @Published var error: String?
     @Published var undoItem: (id: String, revision: Int)? {
         didSet {
@@ -87,12 +87,13 @@ final class InboxModel: ObservableObject {
         guard !references.isEmpty else { return }
         call("statusBatch", ["items": references, "state": "read", "requestId": UUID().uuidString])
     }
-    func done(_ item: NotificationRecord) {
+    @discardableResult func done(_ item: NotificationRecord) -> Bool {
         do {
             let result = try service?.call("status", ["id": item.id, "state": "done", "expectedRevision": item.revision])
             if let revision = result?["revision"] as? Int { undoItem = (item.id, revision) }
             refresh()
-        } catch { self.error = error.localizedDescription }
+            return true
+        } catch { self.error = error.localizedDescription; return false }
     }
     func completeAll() {
         guard inboxCount > 0 else { return }

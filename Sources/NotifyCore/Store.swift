@@ -6,6 +6,67 @@ public final class Store {
     public let paths: NotifyPaths
     public init(paths: NotifyPaths) throws {
         self.paths = paths; try paths.prepare(); db = try Database(paths.database)
+        try normalizeLegacySystemDelivery()
+    }
+    /// Keep the public record shape compatible while retiring the old
+    /// Notification Center projection. This idempotent representation migration
+    /// runs on every open so an older binary or worktree can never make native
+    /// delivery state durable again. It leaves task revisions, timestamps, and
+    /// the durable change feed intact.
+    private func normalizeLegacySystemDelivery() throws {
+        let marker = "own-arrivals-only-v1"
+        try db.transaction {
+            for row in try db.rows("SELECT id,json FROM notifications") {
+                var item = try JSONDecoder().decode(NotificationRecord.self, from: Data(row[1].utf8))
+                let normalizedError = item.deliveryError?.hasPrefix("Image unavailable:") == true ? item.deliveryError : nil
+                guard item.delivery != "accepted" || item.nativeRegistered || item.deliveryError != normalizedError else { continue }
+                item.delivery = "accepted"
+                item.nativeRegistered = false
+                item.deliveryError = normalizedError
+                let json = String(decoding: try JSONEncoder().encode(item), as: UTF8.self)
+                try db.run("UPDATE notifications SET json=? WHERE id=?", [json, row[0]])
+            }
+            for row in try db.rows("SELECT id,result FROM requests") {
+                let result = try JSON.object(Data(row[1].utf8))
+                let (normalized, changed) = normalizeLegacySystemDeliveryValue(result)
+                guard changed, let normalized = normalized as? [String: Any] else { continue }
+                try db.run("UPDATE requests SET result=? WHERE id=?", [JSON.string(normalized), row[0]])
+            }
+            try db.run("INSERT OR IGNORE INTO app_setup(key) VALUES(?)", [marker])
+        }
+    }
+
+    private func normalizeLegacySystemDeliveryValue(_ value: Any) -> (Any, Bool) {
+        if var object = value as? [String: Any] {
+            var changed = false
+            if object["delivery"] is String {
+                let normalizedError = (object["deliveryError"] as? String)?.hasPrefix("Image unavailable:") == true
+                    ? object["deliveryError"] as? String : nil
+                if object["delivery"] as? String != "accepted"
+                    || object["nativeRegistered"] as? Bool != false
+                    || object["deliveryError"] as? String != normalizedError {
+                    object["delivery"] = "accepted"
+                    object["nativeRegistered"] = false
+                    if let normalizedError { object["deliveryError"] = normalizedError }
+                    else { object.removeValue(forKey: "deliveryError") }
+                    changed = true
+                }
+            }
+            for key in Array(object.keys) {
+                let (normalized, nestedChanged) = normalizeLegacySystemDeliveryValue(object[key]!)
+                if nestedChanged { object[key] = normalized; changed = true }
+            }
+            return (object, changed)
+        }
+        if var array = value as? [Any] {
+            var changed = false
+            for index in array.indices {
+                let (normalized, nestedChanged) = normalizeLegacySystemDeliveryValue(array[index])
+                if nestedChanged { array[index] = normalized; changed = true }
+            }
+            return (array, changed)
+        }
+        return (value, false)
     }
     public func all() throws -> [NotificationRecord] {
         lock.lock(); defer { lock.unlock() }
@@ -65,6 +126,14 @@ public final class Store {
             let previous = current
             if let style = p["arrivalStyle"] as? String { current.arrivalStyle = ArrivalStyle(rawValue: style)! }
             if let show = p["showBannerReminder"] as? Bool { current.showBannerReminder = show }
+            if let value = p["completeAllShortcut"] {
+                if value is NSNull { current.completeAllShortcut = nil }
+                else {
+                    let shortcut = value as! [String: Any]
+                    current.completeAllShortcut = GlobalShortcut(keyCode: (shortcut["keyCode"] as! NSNumber).intValue,
+                        key: shortcut["key"] as! String, modifiers: shortcut["modifiers"] as! [String])
+                }
+            }
             if current != previous {
                 current.revision += 1
                 try db.run("INSERT INTO preferences(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json", [JSON.string(try JSON.encode(current))])
@@ -149,7 +218,7 @@ public final class Store {
         let message = p["message"] as! String
         guard !message.isEmpty else { throw NotifyError("invalid_argument", "A nonempty message is required.", exitCode: 1) }
         let actions = p["actions"] as? [String] ?? []
-        guard actions.allSatisfy({ !$0.isEmpty }), actions.count <= 100 else { throw NotifyError("invalid_argument", "Use 1–100 nonempty action labels; native macOS surfaces may show fewer.") }
+        guard actions.allSatisfy({ !$0.isEmpty }), actions.count <= 100 else { throw NotifyError("invalid_argument", "Use 1–100 nonempty action labels.") }
         if let url = p["open"] as? String, URL(string: url)?.scheme?.isEmpty != false { throw NotifyError("invalid_argument", "open must be a URL with a scheme, such as https:// or file://.") }
         if let timeout = p["timeout"] as? Double, timeout <= 0 || !timeout.isFinite { throw NotifyError("invalid_argument", "timeout must be positive seconds.") }
         var due: Double?
@@ -169,7 +238,7 @@ public final class Store {
                 try save(item, kind: "superseded")
             }
         }
-        var item = NotificationRecord(id: UUID().uuidString.lowercased(), title: p["title"] as? String ?? "Terminal", subtitle: p["subtitle"] as? String ?? "", message: message, group: group, actions: actions, reply: p["reply"] as? String, execute: p["execute"] as? String, open: p["open"] as? String, activate: p["activate"] as? String, sound: p["sound"] as? String, contentImage: p["contentImage"] as? String, timeSensitive: p["ignoreDnD"] as? Bool ?? false, createdAt: now, updatedAt: now, scheduledAt: due, deadline: interactive ? (p["timeout"] as? Double).map { now + $0 } : nil, status: due == nil ? "active" : "scheduled", revision: 1, delivery: "pending", nativeRegistered: false)
+        var item = NotificationRecord(id: UUID().uuidString.lowercased(), title: p["title"] as? String ?? "Terminal", subtitle: p["subtitle"] as? String ?? "", message: message, group: group, actions: actions, reply: p["reply"] as? String, execute: p["execute"] as? String, open: p["open"] as? String, activate: p["activate"] as? String, sound: p["sound"] as? String, contentImage: p["contentImage"] as? String, timeSensitive: p["ignoreDnD"] as? Bool ?? false, createdAt: now, updatedAt: now, scheduledAt: due, deadline: interactive ? (p["timeout"] as? Double).map { now + $0 } : nil, status: due == nil ? "active" : "scheduled", revision: 1, delivery: "accepted", nativeRegistered: false)
         if let path = item.contentImage {
             do {
                 let source = URL(string: path)?.isFileURL == true ? URL(string: path)! : URL(fileURLWithPath: path)
@@ -210,7 +279,7 @@ public final class Store {
             else if let at = p["at"] as? String { until = try Schedule.date(at, now: Date(timeIntervalSince1970: now)).timeIntervalSince1970 }
             else { throw NotifyError("invalid_argument", "Snooze requires until, in, or at.") }
             guard until > now else { throw NotifyError("invalid_argument", "Snooze time must be in the future.") }
-            item.status = "snoozed"; item.presentable = true; item.snoozedUntil = until; item.nativeRegistered = false; item.delivery = "pending"
+            item.status = "snoozed"; item.presentable = true; item.snoozedUntil = until; item.nativeRegistered = false; item.delivery = "accepted"
         default: throw NotifyError("invalid_argument", "Unknown state.")
         }
         item.updatedAt = now; item.revision += 1
@@ -250,16 +319,36 @@ public final class Store {
         try save(item, kind: "responded")
         var result = try JSON.encode(item); if effect { result["effectClaim"] = true }; return result
     }
-    public func updateDelivery(id: String, state: String, error: String? = nil, registered: Bool = true) throws {
+    #if DEBUG
+    /// Constructs an older on-disk representation for isolated upgrade checks.
+    public func seedLegacySystemDeliveryForChecks(id: String, state: String, error: String?, registered: Bool) throws {
         lock.lock(); defer { lock.unlock() }
         try db.transaction {
             var item = try get(id)
-            guard item.delivery != state || item.deliveryError != error || item.nativeRegistered != registered else { return }
             item.delivery = state; item.deliveryError = error; item.nativeRegistered = registered
-            item.updatedAt = Date().timeIntervalSince1970; item.revision += 1
-            try save(item, kind: "delivery")
+            let json = String(decoding: try JSONEncoder().encode(item), as: UTF8.self)
+            try db.run("UPDATE notifications SET json=? WHERE id=?", [json, id])
+            for row in try db.rows("SELECT id,result FROM requests") {
+                var result = try JSON.object(Data(row[1].utf8))
+                var changed = false
+                func seed(_ object: inout [String: Any]) {
+                    guard object["id"] as? String == id, object["delivery"] is String else { return }
+                    object["delivery"] = state; object["nativeRegistered"] = registered
+                    if let error { object["deliveryError"] = error }
+                    else { object.removeValue(forKey: "deliveryError") }
+                    changed = true
+                }
+                seed(&result)
+                if var items = result["items"] as? [[String: Any]] {
+                    for index in items.indices { seed(&items[index]) }
+                    if changed { result["items"] = items }
+                }
+                guard changed else { continue }
+                try db.run("UPDATE requests SET result=? WHERE id=?", [JSON.string(result), row[0]])
+            }
         }
     }
+    #endif
     public func finishEffect(id: String, error: String?) throws {
         lock.lock(); defer { lock.unlock() }
         try db.transaction {

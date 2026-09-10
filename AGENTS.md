@@ -1,6 +1,6 @@
 # AgentNotify
 
-Native macOS notification inbox. SwiftUI renders content, AppKit owns the menu bar and panel, UserNotifications owns system delivery. No WebView.
+Native macOS notification inbox. SwiftUI renders content and AppKit owns the menu bar, arrival preview, and panel. AgentNotify never delivers macOS system banners; UserNotifications is used only to remove projections left by older releases. No WebView.
 
 Read CONTEXT.md and docs/adr/0001-durable-inbox.md before changing notification lifecycle or delivery. `swift run NotifyCoreChecks` verifies the store/contract; `scripts/test-integration.py` verifies CLI/socket/MCP against an isolated headless service; `scripts/build.sh` packages the app. Never use the real inbox for automated tests.
 

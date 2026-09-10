@@ -20,11 +20,9 @@ func run(_ name: String, _ check: () throws -> Void) {
 run("ArgumentsTests.testLegacyActionsAndEscaping") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testLegacyActionsAndEscaping() }
 run("ArgumentsTests.testPipedMessageAndListGrammar") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testPipedMessageAndListGrammar() }
 run("ArgumentsTests.testModernTypedArguments") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testModernTypedArguments() }
+run("ArgumentsTests.testShortcutJSONArguments") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testShortcutJSONArguments() }
 run("ArgumentsTests.testScheduleValidation") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testScheduleValidation() }
 run("ArgumentsTests.testCatalogHasMatchingToolSchemas") { let suite = ArgumentsTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; suite.testCatalogHasMatchingToolSchemas() }
-run("arrival_core.custom_primary_without_native") { let suite = ArrivalDeliveryChecks(); suite.testCompactIsPrimaryWhenNativeAlertsAreUnavailable() }
-run("arrival_core.custom_primary_with_native") { let suite = ArrivalDeliveryChecks(); suite.testCompactRemainsPrimaryWhenNativeBannersAreEnabled() }
-run("arrival_core.custom_does_not_wait_for_settings") { let suite = ArrivalDeliveryChecks(); suite.testCompactDoesNotWaitForNativeSettings() }
 run("StoreTests.testReadAndCompletionSurviveReopen") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testReadAndCompletionSurviveReopen() }
 run("StoreTests.testCompleteAllAtomicallyFinishesOnlyTheInbox") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testCompleteAllAtomicallyFinishesOnlyTheInbox() }
 run("StoreTests.testGroupReplacementRetainsAndResolvesEarlierPrompt") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testGroupReplacementRetainsAndResolvesEarlierPrompt() }
@@ -38,6 +36,7 @@ run("StoreTests.testRemoveDoesNotDeleteHistory") { let suite = StoreTests(); try
 run("StoreTests.testRepliesAreLiteralAndActionIndexPreservesDuplicateLabels") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testRepliesAreLiteralAndActionIndexPreservesDuplicateLabels() }
 run("StoreTests.testBadTypesAndUnknownArgumentsAreRejected") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testBadTypesAndUnknownArgumentsAreRejected() }
 run("StoreTests.testAttachmentsPersistWithoutNativePermission") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testAttachmentsPersistWithoutNativePermission() }
+run("StoreTests.testLegacySystemDeliveryIsNormalizedWithoutHidingContentWarnings") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testLegacySystemDeliveryIsNormalizedWithoutHidingContentWarnings() }
 run("StoreTests.testLargePagesRemainWithinTransportLimit") { let suite = StoreTests(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.testLargePagesRemainWithinTransportLimit() }
 run("ArrivalChecks.testStartupCursorDoesNotReplayBacklog") { try ArrivalChecks().testStartupCursorDoesNotReplayBacklog() }
 run("ArrivalChecks.testFreshArrivalsCoalesceInEventOrderAndReplaySafely") { try ArrivalChecks().testFreshArrivalsCoalesceInEventOrderAndReplaySafely() }
@@ -48,7 +47,8 @@ run("ArrivalChecks.testDueSnoozedTaskCanArriveWithExistingResponse") { try Arriv
 run("ArrivalChecks.testReopenAndResolvedOrHiddenChangesStaySilent") { try ArrivalChecks().testReopenAndResolvedOrHiddenChangesStaySilent() }
 run("ArrivalChecks.testCursorGapFailsWithoutAdvancing") { try ArrivalChecks().testCursorGapFailsWithoutAdvancing() }
 run("preferences.persistence_and_isolation") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.persistenceAndIsolation() }
-run("preferences.banner_reminder_migration_and_updates") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.bannerReminderMigrationAndIndependentUpdates() }
+run("preferences.shortcut_migration_persistence_clearing_and_validation") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.shortcutMigrationPersistenceClearingAndValidation() }
+run("preferences.retired_banner_field_compatibility") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.bannerReminderMigrationAndIndependentUpdates() }
 run("preferences.conflicts_and_replay") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.conflictsAndReplay() }
 run("preferences.concurrent_clients_and_service_routing") { let suite = PreferencesChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.concurrentClientsAndServiceRouting() }
 run("interface.routing_and_headless_failure") { let suite = InterfaceChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.routingAndHeadlessFailure() }

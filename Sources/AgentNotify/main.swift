@@ -10,6 +10,12 @@ if args.first == "check-feedback" {
         stdout(JSON.string(["ok": true, "checks": try InboxFeedbackChecks.run()]) + "\n"); exit(0)
     } catch { stderr(error.localizedDescription); exit(1) }
 }
+if args.first == "check-shortcut" {
+    _ = NSApplication.shared
+    do {
+        stdout(JSON.string(["ok": true, "checks": try GlobalShortcutChecks.run()]) + "\n"); exit(0)
+    } catch { stderr(error.localizedDescription); exit(1) }
+}
 if args.first == "check-hover" {
     _ = NSApplication.shared
     let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 610), styleMask: [.borderless], backing: .buffered, defer: false)
@@ -25,7 +31,7 @@ if args.first == "check-arrivals", args.count == 2 {
         let output = URL(fileURLWithPath: args[1])
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
         let checks = try MainActor.assumeIsolated {
-            try NotificationSettingsChecks.run() + ArrivalPresentationChecks.run(output: output)
+            try ArrivalPresentationChecks.run(output: output)
         }
         try JSON.data(["ok": true, "checks": checks]).write(to: output.appendingPathComponent("arrival-checks.json"))
         stdout("Native arrival checks passed.\n"); exit(0)

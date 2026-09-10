@@ -1,6 +1,6 @@
 ---
 name: notifications
-description: Send, browse, and resolve durable macOS notifications with AgentNotify’s matching MCP, socket API, and terminal-notifier-compatible CLI. Use for completion notices, actionable prompts, replies, inbox tasks, and notification diagnosis.
+description: Send, browse, and resolve durable AgentNotify inbox tasks on macOS with matching MCP, socket API, and terminal-notifier-compatible CLI. Use for completion notices, actionable prompts, replies, inbox tasks, and notification diagnosis.
 ---
 
 # Notifications
@@ -24,7 +24,7 @@ Equivalent MCP `send` arguments use the same field names without a leading dash:
 
 Use `execute` only for an explicitly intended body action, with absolute executable paths and safely quoted caller-owned arguments. It runs `/bin/sh -c` on this Mac. Do not interpolate untrusted content. `activate` launches/focuses a bundle; it does not know a Herdr pane or conversation. Use a verified app-specific focus command or deep link when one exists. Do not invent a focus target.
 
-Sound is opt-in. `ignoreDnD` requests time-sensitive presentation but cannot promise a Focus bypass. Native settings control banners and sound; acceptance does not prove visibility.
+AgentNotify's own sticky arrival is the only presentation. It does not post macOS banners, sounds, categories, or Notification Center entries. The legacy `sound` and `ignoreDnD` inputs are accepted for argument compatibility but do not opt into system notification delivery.
 
 ## Choices, replies, and durable outcomes
 
@@ -41,13 +41,13 @@ Read is separate from done. Reading never executes callbacks. The inbox does not
 
 ## Browse and coordinate
 
-`list` filters inbox, unread, later, done, or all; add exact group, search query, and creation time bounds. `status` marks read/unread, done, reopen, or snooze; snooze accepts `until`, `in`, or `at`. `statusBatch` applies the same state atomically to exact ID/revision references and is the safe basis for Mark All Read. `completeAll` atomically moves every active Inbox notification to Done, closes unanswered prompts without running callbacks, and leaves scheduled or snoozed notifications alone. `remove` withdraws a group or ALL while preserving history. Never remove ALL merely to clean up a test.
+`list` filters inbox, unread, later, done, or all; add exact group, search query, and creation time bounds. `status` marks read/unread, done, reopen, or snooze; snooze accepts `until`, `in`, or `at`. `statusBatch` applies the same state atomically to exact ID/revision references and is the safe basis for Mark All Read. The compact arrival's Complete control performs this durable done transition for the displayed item, closes an unanswered prompt without callbacks, and advances through a burst before dismissing after its last item. `completeAll` atomically moves every active Inbox notification to Done, closes unanswered prompts without running callbacks, and leaves scheduled or snoozed notifications alone. The native Complete All command has a count-aware confirmation; its global shortcut defaults to `⌥⇧⌘D` and can be changed or cleared in Preferences. Recording requires at least two modifiers. `remove` withdraws a group or ALL while preserving history. Never remove ALL merely to clean up a test.
 
 For concurrent clients, include a unique `requestId` on mutations and reuse it with identical input only for retries. Use the current `expectedRevision` to avoid stale writes. `changes` returns ordered snapshots after a cursor; persist that cursor and drain `hasMore` pages. This is a local multi-client contract, not a deployed mobile sync service.
 
 ## Appearance preferences
 
-`preferences` reads the saved arrival design and revision. `setPreferences` changes `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`); the retained `showBannerReminder` field is deprecated and no longer renders UI. AgentNotify arrivals are primary and appear regardless of native authorization. Optional macOS banners may appear alongside them when enabled and can be hidden by Focus or remote-control conditions. Preferences reports that state and, when enabled, helps the human turn banners off in System Settings. Queue Peek is the default.
+`preferences` reads the saved arrival design, Complete All shortcut, and revision. `setPreferences` changes `arrivalStyle` (`queue-peek`, `compact-toast`, or `queue-shelf`) and `completeAllShortcut`; use `null` to clear the shortcut. A shortcut object contains `keyCode`, its display `key`, and two to four unique `modifiers` drawn from `control`, `option`, `shift`, and `command`. Queue Peek and `⌥⇧⌘D` are the defaults. The retained `showBannerReminder` field is deprecated and inert: it renders no UI and cannot enable macOS presentation.
 
 ## Control the native interface
 
@@ -61,7 +61,7 @@ AgentStart exposes the full MCP in managed Codex, Claude, and AgentVoice session
 
 ## Diagnose and replacement
 
-Run `diagnose` to inspect store counts, app connection, authorization, and delivery state. A denied optional banner still leaves a durable inbox item and does not suppress AgentNotify's own arrival. `-list ALL` queries native delivered notifications; `list --filter all` includes durable history, including removed and replaced records.
+Run `diagnose` to inspect store counts, app connection, and the AgentNotify-only presentation policy. `-list ALL` uses AgentNotify's durable active projection; `list --filter all` includes durable history, including removed and replaced records. macOS notification authorization is irrelevant because AgentNotify never requests UserNotifications delivery.
 
 `agentnotify` is usable anywhere a script previously invoked `terminal-notifier`. The installer can optionally add a PATH-level terminal-notifier symlink; it never overwrites Homebrew or vendored binaries. Ruby callers can set `TERMINAL_NOTIFIER_BIN` to the absolute agentnotify path before loading the gem. Hardcoded paths must be changed at their owning source.
 

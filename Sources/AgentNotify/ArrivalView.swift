@@ -87,7 +87,7 @@ struct ArrivalView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                    .padding(.trailing, 30)
+                    .padding(.trailing, 58)
 
                 Text(model.content.title.isEmpty ? "Notification" : model.content.title)
                     .font(.system(size: 13, weight: .semibold))

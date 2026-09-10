@@ -24,6 +24,9 @@ final class ArrivalPresentation {
     var displayedStyle: ArrivalStyle { model.style }
     var placement: ((NSSize) -> NSRect?)?
     var open: ((String) -> Void)?
+    /// Completes the displayed durable notification through the shared service
+    /// contract and returns the refreshed Inbox on success.
+    var complete: ((NotificationRecord) -> [NotificationRecord]?)?
     var onChange: (() -> Void)?
 
     var isVisible: Bool { panel?.isVisible == true }
@@ -86,7 +89,8 @@ final class ArrivalPresentation {
             panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
             let controller = NSHostingController(rootView: ArrivalSurface(model: model,
                 open: { [weak self] id in self?.openDisplayed(id) },
-                dismiss: { [weak self] in self?.dismiss() }))
+                dismiss: { [weak self] in self?.dismiss() },
+                complete: { [weak self] in self?.completeDisplayed() }))
             controller.sizingOptions = []
             panel.contentViewController = controller
             self.panel = panel
@@ -133,6 +137,13 @@ final class ArrivalPresentation {
         guard isVisible, id == model.content.id else { return }
         dismiss()
         open?(id)
+    }
+
+    func completeDisplayed() {
+        let id = pressedID ?? model.content.id
+        guard isVisible, id == model.content.id, let item = records[id],
+              let items = complete?(item) else { return }
+        refresh(items)
     }
 
     func dismiss() {

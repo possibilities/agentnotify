@@ -19,13 +19,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     private var controller: NSViewController!
     private var server: SocketServer?
     private var service: NotifyService?
-    private var native: NativeNotifications?
     private var focusMonitor: Any?
     private var anchorWindow: NSWindow?
     private var inboxSize = NSSize(width: 440, height: 610)
     private var manuallyPlaced = false
     private var usesPanel: Bool { model.detached || manuallyPlaced }
     private let arrivals = ArrivalPresentation()
+    private let completeAllShortcut = GlobalShortcutController()
     private var arrivalTracker: ArrivalTracker?
     private var pendingArrivalIDs: [String] = []
     private var arrivalAnchor: NSRect?
@@ -65,20 +65,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             service.interfaceController = self
             interfaceObservation = model.objectWillChange.sink { [weak self] in self?.bumpInterfaceRevision() }
             preferencesModel.service = service
+            completeAllShortcut.action = { [weak self] in self?.showCompleteAllConfirmation() }
+            preferencesModel.onApplyShortcut = { [weak self] shortcut in self?.completeAllShortcut.apply(shortcut) }
+            preferencesModel.activeShortcut = { [weak self] in self?.completeAllShortcut.current }
             preferencesModel.onChange = { [weak self] preferences in
                 self?.arrivals.style = preferences.arrivalStyle
             }
             preferencesModel.refresh()
             service.onPreferencesChange = { [weak self] in DispatchQueue.main.async { self?.preferencesModel.refresh() } }
             service.onShowPreferences = { [weak self] in DispatchQueue.main.async { self?.showPreferences() } }
-            let native = NativeNotifications(service: service); self.native = native
-            native.onAuthorization = { [weak self] in
-                self?.model.authorization = $0
-                self?.preferencesModel.systemBannersEnabled = self?.native?.bannersEnabled ?? false
-                self?.presentPendingArrivals()
-            }
-            native.observeSettings { [weak self] in
-                self?.inboxIsVisible == true || self?.preferencesWindow?.window?.isVisible == true
+            // AgentNotify owns arrival presentation. Remove any native requests
+            // left by earlier releases, but never register new system banners.
+            if ProcessInfo.processInfo.environment["AGENTNOTIFY_STATE_DIR"] == nil {
+                LegacySystemNotificationCleanup.removeAll()
             }
             // Seed before timers or clients can create a new event. Existing
             // active rows remain waiting without replaying them as arrivals.
@@ -93,7 +92,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             model.onDetach = { [weak self] in self?.toggleDetached() }
             model.onClose = { [weak self] in self?.closeSurface() }
             model.onPreferences = { [weak self] in self?.showPreferences() }
-            preferencesModel.onSystemSettings = { [weak self] in self?.native?.openSettings() }
             model.onQuit = { NSApplication.shared.terminate(nil) }
             model.onChangeCount = { [weak self] count in self?.updateStatus(count) }
             model.onOpenArrivals = { [weak self] in
@@ -116,6 +114,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
                     self.model.markRead(id)
                 }
             }
+            arrivals.complete = { [weak self] item in
+                guard let self, self.model.done(item) else { return nil }
+                return self.model.items
+            }
             controller = NSHostingController(rootView: InboxView(model: model))
             // Pointer input ends control navigation without interrupting text
             // editing. Tab and VoiceOver retain the native focus behavior.
@@ -130,7 +132,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
             statusItem.button?.target = self; statusItem.button?.action = #selector(toggle)
             updateStatus(0)
-            try service.start(); server.start(); native.refreshSettings(); model.refresh()
+            try service.start(); server.start(); model.refresh()
             if ProcessInfo.processInfo.environment["AGENTNOTIFY_PREVIEW"] == "1" { show() }
             #if DEBUG
             if let output = ProcessInfo.processInfo.environment["AGENTNOTIFY_SELF_CHECK_DIR"], ProcessInfo.processInfo.environment["AGENTNOTIFY_STATE_DIR"] != nil {
@@ -177,13 +179,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             }
             model.refresh()
             model.arrivalIDs.removeAll { id in !model.items.contains { $0.id == id && $0.isInbox && $0.presentable } }
-            if pendingArrivalIDs.isEmpty { arrivals.refresh(model.items); native?.reconcile() }
-            else { native?.refreshSettings() }
+            if pendingArrivalIDs.isEmpty { arrivals.refresh(model.items) }
+            else { presentPendingArrivals() }
         } catch { model.error = "Could not read new notifications. \(error.localizedDescription)" }
     }
 
     private func presentPendingArrivals() {
-        guard ["authorized", "provisional", "denied", "not-determined"].contains(model.authorization) else { return }
         model.refresh()
         let records = Dictionary(uniqueKeysWithValues: model.items.filter { $0.isInbox && $0.presentable }.map { ($0.id, $0) })
         let batch = pendingArrivalIDs.compactMap { records[$0] }
@@ -191,9 +192,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         if inboxIsVisible {
             arrivals.dismiss()
             for item in batch where !model.arrivalIDs.contains(item.id) { model.arrivalIDs.append(item.id) }
-        } else if native?.usesCompactArrivals == true {
-            if !batch.isEmpty { arrivals.receive(batch, items: model.items) }
-        } else { arrivals.dismiss() }
+        } else if !batch.isEmpty { arrivals.receive(batch, items: model.items) }
     }
 
     private func arrivalFrame(_ size: NSSize) -> NSRect? {
@@ -218,8 +217,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         }
         preferencesWindow?.present()
         if !wasVisible { bumpInterfaceRevision() }
-        native?.refreshSettings()
         if let window = preferencesWindow?.window { offerShimSetup(in: window) }
+    }
+    private func showCompleteAllConfirmation() {
+        model.refresh()
+        guard model.inboxCount > 0 else { return }
+        show()
+        model.confirmingCompleteAll = true
     }
     private func offerShimSetup(in window: NSWindow) {
         #if DEBUG
@@ -238,7 +242,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         if usesPanel {
             panel?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
             if !wasVisible { clearOpeningFocus(); startHoverDismissal() }
-            native?.refreshSettings(retryDenied: true)
             if let window = panel { offerShimSetup(in: window) }
             if !wasVisible { bumpInterfaceRevision() }
             return
@@ -255,7 +258,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             clearOpeningFocus()
             startHoverDismissal()
         }
-        native?.refreshSettings(retryDenied: true)
         if let window = controller.view.window { offerShimSetup(in: window) }
         if !wasVisible { bumpInterfaceRevision() }
     }
