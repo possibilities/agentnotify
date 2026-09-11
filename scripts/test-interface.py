@@ -79,6 +79,8 @@ with tempfile.TemporaryDirectory(prefix='an-ui-', dir='/tmp') as tmp:
 
         shown = ok('uiShow', {'surface': 'inbox', 'requestId': 'show-inbox'})
         check(shown['surface'] == 'inbox' and shown['inbox']['visible'], 'MCP/API shows native inbox')
+        check(shown['inbox']['presentation'] == 'panel' and not shown['inbox']['pinned'],
+              'an unpinned inbox uses the shared native panel')
         filtered = ok('uiSetView', {'filter': 'unread', 'query': 'Alpha', 'id': first['id'], 'details': 'expand', 'requestId': 'filter-alpha'})
         check(filtered['matchingCount'] == 1 and filtered['selection']['id'] == first['id'], 'search, filter, and exact selection apply together')
         check(ok('get', {'id': first['id']}).get('readAt') is None, 'interface selection does not imply reading')
@@ -94,7 +96,7 @@ with tempfile.TemporaryDirectory(prefix='an-ui-', dir='/tmp') as tmp:
         before_pin = ok('uiState')
         pin_params = {'pinned': True, 'expectedInstanceId': before_pin['instanceId'], 'expectedUIRevision': before_pin['uiRevision'], 'requestId': 'pin-once'}
         pinned = ok('uiSetPinned', pin_params)
-        check(pinned['inbox']['pinned'] and pinned['inbox']['presentation'] == 'panel', 'pin converts the inbox to a persistent panel')
+        check(pinned['inbox']['pinned'] and pinned['inbox']['presentation'] == 'panel', 'pin keeps the shared panel persistent')
         replay = ok('uiSetPinned', pin_params)
         check(replay['uiRevision'] == pinned['uiRevision'], 'retried interface request is idempotent')
         stale = api('uiNavigate', {'direction': 'next', 'expectedUIRevision': before_pin['uiRevision'], 'requestId': 'stale-navigation'})
