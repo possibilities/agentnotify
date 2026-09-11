@@ -1,9 +1,22 @@
 import SwiftUI
 
+private struct IconHoverHighlight: ViewModifier {
+    @State private var hovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(Color.primary.opacity(hovered ? 0.07 : 0), in: RoundedRectangle(cornerRadius: 5))
+            .onHover { hovered = $0 }
+    }
+}
+
+extension View {
+    func iconHoverHighlight() -> some View { modifier(IconHoverHighlight()) }
+}
+
 struct CompactIconButton: View {
     let symbol: String
     let action: () -> Void
-    @State private var hovered = false
 
     var body: some View {
         Button(action: action) {
@@ -13,8 +26,7 @@ struct CompactIconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(Color.primary.opacity(hovered ? 0.07 : 0), in: RoundedRectangle(cornerRadius: 5))
-        .onHover { hovered = $0 }
+        .iconHoverHighlight()
     }
 }
 
