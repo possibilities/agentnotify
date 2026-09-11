@@ -166,6 +166,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     }
     private func updateStatusHighlight() {
         statusItem?.button?.highlight(inboxIsVisible)
+        // The status item acts on mouse-down so a second click can close a
+        // transient popover without immediately reopening it. AppKit finishes
+        // the button's tracking on the later mouse-up and clears its pressed
+        // highlight, so restore the appearance after that tracking completes.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.statusItem?.button?.highlight(self.inboxIsVisible)
+        }
     }
     private func refreshNotifications() {
         guard let service, let tracker = arrivalTracker else { return }
@@ -392,6 +400,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     }
     #if DEBUG
     private func verifyPanel(_ output: String) {
+        show()
+        // Model the highlight reset performed when a mouse-down action's
+        // button tracking subsequently finishes on mouse-up. Continue on the
+        // next main-queue turn so the deferred restoration can run first.
+        statusItem.button?.highlight(false)
+        DispatchQueue.main.async { [weak self] in self?.verifyPanelAfterButtonTracking(output) }
+    }
+    private func verifyPanelAfterButtonTracking(_ output: String) {
         do {
             func require(_ condition: Bool, _ message: String) throws {
                 if !condition { throw NotifyError("internal_error", message) }
@@ -407,10 +423,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             try require(notched.maxY == 944, "Hidden menu anchor crossed the display's safe top edge.")
             let directory = URL(fileURLWithPath: output)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            show()
             settle()
             try require(statusItem.length == NSStatusItem.variableLength, "Menu-bar item did not use its native intrinsic width.")
-            try require(statusItem.button?.cell?.isHighlighted == true, "Visible inbox did not highlight its menu-bar item.")
+            try require(statusItem.button?.cell?.isHighlighted == true, "Visible inbox did not restore its menu-bar highlight after button tracking.")
             var frames: [[String: String]] = []
             for _ in 0..<4 {
                 guard let before = contentScreenFrame, let screen = menuBarAnchor?.screen, let openingAnchor = anchorWindow?.frame else { throw NotifyError("internal_error", "No initial anchored content.") }
