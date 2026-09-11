@@ -13,6 +13,7 @@ final class InboxPanel: NSPanel {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NotifyInterfaceController {
+    private static let idleStatusItemLength: CGFloat = 22
     private var statusItem: NSStatusItem!
     private var popover = NSPopover()
     private var panel: InboxPanel?
@@ -146,15 +147,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     }
     private func updateStatus(_ count: Int) {
         let name = count > 0 ? "tray.circle.fill" : "tray.circle"
-        let image = NSImage(systemSymbolName: name, accessibilityDescription: "Notifications")
+        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: "Notifications")?
+            .withSymbolConfiguration(configuration)
         image?.isTemplate = true; statusItem?.button?.image = image
-        statusItem?.length = NSStatusItem.variableLength
-        statusItem?.button?.imagePosition = .imageLeading
+        statusItem?.length = count > 0 ? NSStatusItem.variableLength : Self.idleStatusItemLength
+        statusItem?.button?.imagePosition = count > 0 ? .imageLeading : .imageOnly
         statusItem?.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         statusItem?.button?.title = count > 0 ? " \(count > 99 ? "99+" : String(count))" : ""
         let label = count > 0 ? "Notifications, \(count) waiting, \(model.unreadCount) unread" : "Notifications"
         statusItem?.button?.toolTip = label
         statusItem?.button?.setAccessibilityLabel(label)
+        updateStatusHighlight()
+    }
+    private func updateStatusHighlight() {
+        statusItem?.button?.highlight(inboxIsVisible)
     }
     private func refreshNotifications() {
         guard let service, let tracker = arrivalTracker else { return }
@@ -244,6 +251,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             if !wasVisible { clearOpeningFocus(); startHoverDismissal() }
             if let window = panel { offerShimSetup(in: window) }
             if !wasVisible { bumpInterfaceRevision() }
+            updateStatusHighlight()
             return
         }
         if !wasVisible {
@@ -260,6 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         }
         if let window = controller.view.window { offerShimSetup(in: window) }
         if !wasVisible { bumpInterfaceRevision() }
+        updateStatusHighlight()
     }
     private func startHoverDismissal() {
         guard !model.detached, let window = controller.view.window else { return }
@@ -277,11 +286,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             if !model.detached { manuallyPlaced = false }
         } else { popover.performClose(nil) }
         if wasVisible { bumpInterfaceRevision() }
+        updateStatusHighlight()
     }
     func popoverDidClose(_ notification: Notification) {
         model.arrivalIDs.removeAll()
         hoverDismissal.stop()
         anchorWindow?.orderOut(nil)
+        updateStatusHighlight()
     }
     private func configurePopover() {
         // A popover caches its positioning window and content frame. Never
@@ -340,8 +351,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         controller.view.removeFromSuperview()
         model.presentedAsPanel = false; manuallyPlaced = false
         configurePopover()
+        updateStatusHighlight()
     }
     private func toggleDetached() {
+        defer { updateStatusHighlight() }
         if model.detached {
             model.detached = false
             if manuallyPlaced {
@@ -392,6 +405,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             show()
             settle()
+            try require(statusScreenFrame?.width == Self.idleStatusItemLength, "Idle menu-bar item did not use its compact width.")
+            try require(statusItem.button?.cell?.isHighlighted == true, "Visible inbox did not highlight its menu-bar item.")
             var frames: [[String: String]] = []
             for _ in 0..<4 {
                 guard let before = contentScreenFrame, let screen = menuBarAnchor?.screen, let openingAnchor = anchorWindow?.frame else { throw NotifyError("internal_error", "No initial anchored content.") }
@@ -445,6 +460,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             let hoverChecks = try PopoverDismissalChecks.run(window: panel)
             toggleDetached(); settle()
             closeSurface()
+            settle()
+            try require(statusItem.button?.cell?.isHighlighted != true, "Closed inbox left its menu-bar item highlighted.")
             try require(!popover.isShown && anchorWindow?.isVisible != true, "Closing left the popover or positioning window visible.")
             var arrivalGeometry: [[String: String]] = []
             for x in [screen.frame.minX, screen.frame.maxX - 22] {
