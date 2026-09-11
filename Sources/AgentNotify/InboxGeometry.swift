@@ -11,8 +11,8 @@ enum InboxGeometry {
     }
 
     // Auto-hide moves the real status-item window above the screen and clears
-    // its `screen`. NSPopover cannot anchor there. A transparent positioning
-    // window uses an on-screen anchor when opening, even when the item is hidden.
+    // its `screen`. Project an on-screen anchor for the panel and its pointer,
+    // even when the item is hidden; no positioning window is needed.
     static func visibleAnchor(_ raw: NSRect, screen: NSRect, topInset: CGFloat) -> NSRect {
         let top = screen.maxY - topInset
         let width = min(max(raw.width, 1), screen.width)

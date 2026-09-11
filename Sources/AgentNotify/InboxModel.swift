@@ -13,6 +13,7 @@ final class InboxModel: ObservableObject {
     // changes its lifetime without restoring the menu-bar triangle.
     @Published var detached = false
     @Published var presentedAsPanel = false
+    @Published var pointerX: CGFloat?
     @Published var searchVisible = false
     @Published var arrivalIDs: [String] = []
     @Published var confirmingCompleteAll = false

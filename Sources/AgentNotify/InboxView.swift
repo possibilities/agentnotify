@@ -50,6 +50,17 @@ struct InboxDragRegion: NSViewRepresentable {
     func updateNSView(_ nsView: DragView, context: Context) {}
 }
 
+struct InboxPointer: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
+            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+            path.closeSubpath()
+        }
+    }
+}
+
 struct InboxView: View {
     @ObservedObject var model: InboxModel
     @FocusState private var searchFocused: Bool
@@ -127,6 +138,18 @@ struct InboxView: View {
         .background { if model.presentedAsPanel { InboxDragRegion() } }
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: model.presentedAsPanel ? InboxPanel.cornerRadius : 0, style: .continuous))
+        // Reserve the pointer strip in both states: pinning hides the pointer
+        // without shifting the body, controls, or window.
+        .padding(.top, model.presentedAsPanel ? InboxPanel.pointerHeight : 0)
+        .overlay(alignment: .topLeading) {
+            if model.presentedAsPanel, !model.detached, let x = model.pointerX {
+                GeometryReader { geometry in
+                    InboxPointer().fill(Color(nsColor: .windowBackgroundColor))
+                        .frame(width: 24, height: InboxPanel.pointerHeight + 1)
+                        .offset(x: min(max(x, 32), geometry.size.width - 32) - 12)
+                }.allowsHitTesting(false).accessibilityHidden(true)
+            }
+        }
         .tint(.primary)
         .ignoresSafeArea(.container, edges: .top)
         .onExitCommand { if model.searchVisible { model.query = ""; model.searchVisible = false } else if model.selected != nil { model.selected = nil } else { model.onClose?() } }

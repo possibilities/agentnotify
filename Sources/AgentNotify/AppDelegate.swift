@@ -7,6 +7,7 @@ final class InboxPanel: NSPanel {
     // Match the native popover body's continuous corner, without a titled
     // window's different corner mask and edge highlight.
     static let cornerRadius: CGFloat = 20
+    static let pointerHeight: CGFloat = 12
     var onDrag: (() -> Void)?
     var onResignKey: (() -> Void)?
     override var canBecomeKey: Bool { true }
@@ -24,10 +25,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     private var server: SocketServer?
     private var service: NotifyService?
     private var focusMonitor: Any?
-    private var inboxSize = NSSize(width: 440, height: 610)
+    private var inboxSize = NSSize(width: 440, height: 610 + InboxPanel.pointerHeight)
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
     private var selectionGeneration = 0
+    private var statusMouseMonitor: Any?
+    private var statusReleaseMonitor: Any?
+    private var statusPressInFlight = false
     private let arrivals = ArrivalPresentation()
     private let completeAllShortcut = GlobalShortcutController()
     private var arrivalTracker: ArrivalTracker?
@@ -135,6 +139,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             statusItem.button?.target = self; statusItem.button?.action = #selector(toggle)
             statusItem.button?.sendAction(on: [.leftMouseUp])
+            configureStatusTracking()
             configurePanel()
             updateStatus(0)
             try service.start(); server.start(); model.refresh()
@@ -164,17 +169,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         let label = count > 0 ? "Notifications, \(count) waiting, \(model.unreadCount) unread" : "Notifications"
         statusItem?.button?.toolTip = label
         statusItem?.button?.setAccessibilityLabel(label)
-        updateStatusHighlight()
     }
     private func updateStatusHighlight() {
         selectionGeneration += 1
         let generation = selectionGeneration
-        if !inboxIsVisible { statusItem?.button?.isHighlighted = false; return }
+        statusItem?.button?.isHighlighted = inboxIsVisible || statusPressInFlight
+        if !inboxIsVisible { return }
         // Use the same native renderer for pressed and selected states. Like
         // Maccy's panel, restore selection after the button action has returned.
         DispatchQueue.main.async { [weak self] in
             guard let self, self.selectionGeneration == generation, self.inboxIsVisible else { return }
             self.statusItem?.button?.isHighlighted = true
+        }
+    }
+    private func configureStatusTracking() {
+        // AppKit's ordinary momentary-button tracker clears its highlight at
+        // mouse-up before a queued panel selection can repaint it. Keep the
+        // native renderer, but own this exact button's press/release lifetime.
+        // Command-drag remains AppKit's native status-item rearrangement.
+        statusMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseDragged, .leftMouseUp]) { [weak self] event in
+            guard let self, let button = self.statusItem.button else { return event }
+            let point = event.window?.convertPoint(toScreen: event.locationInWindow)
+            let inside = point.map { self.statusScreenFrame?.contains($0) == true } ?? false
+            if event.type == .leftMouseDown {
+                guard event.window === button.window, inside, !event.modifierFlags.contains(.command) else { return event }
+                self.statusPressInFlight = true
+                button.isHighlighted = true
+                return nil
+            }
+            guard self.statusPressInFlight else { return event }
+            if event.type == .leftMouseDragged {
+                button.isHighlighted = self.inboxIsVisible || inside
+            } else {
+                self.statusPressInFlight = false
+                if inside { self.toggle() } else { self.updateStatusHighlight() }
+            }
+            return nil
+        }
+        statusReleaseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+            guard let self, self.statusPressInFlight else { return }
+            self.statusPressInFlight = false
+            self.updateStatusHighlight()
         }
     }
     private func refreshNotifications() {
@@ -271,7 +306,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             let size = NSSize(width: min(inboxSize.width, screen.width - 26),
                               height: min(inboxSize.height, screen.height - 26))
             let x = max(screen.minX + 13, min(rect.midX - size.width / 2, screen.maxX - size.width - 13))
-            let top = min(rect.minY - 13, screen.maxY - 8)
+            let top = min(rect.minY - 1, screen.maxY)
+            model.pointerX = rect.midX - x
             placePanelContent(at: NSRect(x: x, y: max(screen.minY + 8, top - size.height),
                                         width: size.width, height: size.height))
         }
@@ -339,7 +375,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     private func configurePanel() {
         if let screen = menuBarAnchor?.screen {
             inboxSize.width = min(inboxSize.width, max(360, screen.visibleFrame.width - 32))
-            inboxSize.height = min(inboxSize.height, max(340, screen.visibleFrame.height - 32))
+            inboxSize.height = min(inboxSize.height, max(340 + InboxPanel.pointerHeight, screen.visibleFrame.height - 32))
         }
         model.presentedAsPanel = true
         let panel = InboxPanel(contentRect: NSRect(origin: .zero, size: inboxSize),
@@ -350,11 +386,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         panel.isMovableByWindowBackground = false; panel.isReleasedWhenClosed = false
         panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.minSize = NSSize(width: 360, height: 340); panel.maxSize = NSSize(width: 700, height: 1200)
+        panel.minSize = NSSize(width: 360, height: 340 + InboxPanel.pointerHeight)
+        panel.maxSize = NSSize(width: 700, height: 1200 + InboxPanel.pointerHeight)
         panel.contentViewController = controller
         // Installing the hosting controller can replace the requested frame
         // with its empty-content fitting size. Keep the initial inbox size.
         panel.setContentSize(inboxSize)
+        panel.onDrag = { [weak self] in self?.model.pointerX = nil }
         panel.onResignKey = { [weak self] in self?.panelResignedKey() }
         self.panel = panel
     }
@@ -390,6 +428,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     }
     #if DEBUG
     private func verifyPanel(_ output: String) {
+        // Opening refreshes the count while the native button is still
+        // pressed and the panel is hidden. That refresh must not unselect it.
+        statusItem.button?.isHighlighted = true
+        updateStatus(model.inboxCount)
+        guard statusItem.button?.isHighlighted == true else {
+            stderr("Native panel check failed: count refresh cleared the opening highlight.")
+            exit(1)
+        }
+        statusItem.button?.isHighlighted = false
         show()
         // Give the native button's deferred selection a real main-queue turn.
         DispatchQueue.main.async { self.verifyVisiblePanel(output) }
@@ -407,6 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             }
             try require(inboxIsVisible && panel.contentViewController === controller, "Inbox lost its shared content.")
             try require(statusItem.button?.isHighlighted == true, "Native status selection is missing.")
+            try require(model.pointerX != nil, "Fresh unpinned opening lost its pointer.")
             try require(statusItem.length == NSStatusItem.variableLength, "Status item lost intrinsic sizing.")
             try require(screen.frame.contains(initial), "Inbox escaped the screen.")
             try require(initial.size == inboxSize, "Hosting content collapsed the initial inbox size.")
@@ -465,6 +513,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         arrivals.dismiss()
         stopDismissal()
         if let focusMonitor { NSEvent.removeMonitor(focusMonitor) }
+        if let statusMouseMonitor { NSEvent.removeMonitor(statusMouseMonitor) }
+        if let statusReleaseMonitor { NSEvent.removeMonitor(statusReleaseMonitor) }
         server?.stop(); service?.stop()
     }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
