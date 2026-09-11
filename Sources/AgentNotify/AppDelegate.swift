@@ -129,7 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
                 return event
             }
             configurePopover()
-            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             statusItem.button?.target = self; statusItem.button?.action = #selector(toggle)
             updateStatus(0)
             try service.start(); server.start(); model.refresh()
@@ -145,10 +145,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         }
     }
     private func updateStatus(_ count: Int) {
-        let name = count > 0 ? "tray.fill" : "tray"
+        let name = count > 0 ? "tray.circle.fill" : "tray.circle"
         let image = NSImage(systemSymbolName: name, accessibilityDescription: "Notifications")
         image?.isTemplate = true; statusItem?.button?.image = image
-        statusItem?.length = count > 0 ? NSStatusItem.variableLength : NSStatusItem.squareLength
+        statusItem?.length = NSStatusItem.variableLength
         statusItem?.button?.imagePosition = .imageLeading
         statusItem?.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         statusItem?.button?.title = count > 0 ? " \(count > 99 ? "99+" : String(count))" : ""
