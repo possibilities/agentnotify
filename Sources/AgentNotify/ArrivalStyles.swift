@@ -73,13 +73,7 @@ private struct ArrivalDismissButton: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: "xmark")
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        CompactIconButton(symbol: "xmark", action: action)
         .foregroundStyle(.secondary)
         .help("Dismiss preview")
         .accessibilityLabel("Dismiss notification preview")
