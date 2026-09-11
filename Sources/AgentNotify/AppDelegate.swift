@@ -13,7 +13,6 @@ final class InboxPanel: NSPanel {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NotifyInterfaceController {
-    private static let idleStatusItemLength: CGFloat = 22
     private var statusItem: NSStatusItem!
     private var popover = NSPopover()
     private var panel: InboxPanel?
@@ -150,11 +149,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     }
     private func updateStatus(_ count: Int) {
         let name = count > 0 ? "tray.circle.fill" : "tray.circle"
-        let configuration = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+        let configuration = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
         let image = NSImage(systemSymbolName: name, accessibilityDescription: "Notifications")?
             .withSymbolConfiguration(configuration)
         image?.isTemplate = true; statusItem?.button?.image = image
-        statusItem?.length = count > 0 ? NSStatusItem.variableLength : Self.idleStatusItemLength
+        // Let AppKit apply the native menu-extra padding around both the icon
+        // and its optional count instead of drawing inside a fixed-width slot.
+        statusItem?.length = NSStatusItem.variableLength
         statusItem?.button?.imagePosition = count > 0 ? .imageLeading : .imageOnly
         statusItem?.button?.font = .monospacedDigitSystemFont(ofSize: 11, weight: .regular)
         statusItem?.button?.title = count > 0 ? " \(count > 99 ? "99+" : String(count))" : ""
@@ -408,7 +409,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             show()
             settle()
-            try require(statusScreenFrame?.width == Self.idleStatusItemLength, "Idle menu-bar item did not use its compact width.")
+            try require(statusItem.length == NSStatusItem.variableLength, "Menu-bar item did not use its native intrinsic width.")
             try require(statusItem.button?.cell?.isHighlighted == true, "Visible inbox did not highlight its menu-bar item.")
             var frames: [[String: String]] = []
             for _ in 0..<4 {
