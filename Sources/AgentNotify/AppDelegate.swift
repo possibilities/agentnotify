@@ -12,8 +12,27 @@ final class InboxPanel: NSPanel {
     override var canBecomeMain: Bool { true }
 }
 
+final class StatusSelectionView: NSView {
+    var isSelected = false {
+        didSet { isHidden = !isSelected; needsDisplay = true }
+    }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+    override func draw(_ dirtyRect: NSRect) {
+        guard isSelected else { return }
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let tint = dark ? NSColor.white : NSColor.black
+        tint.withAlphaComponent(34.0 / 255.0).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NotifyInterfaceController {
     private var statusItem: NSStatusItem!
+    private var statusSelectionView: StatusSelectionView?
     private var popover = NSPopover()
     private var panel: InboxPanel?
     private var controller: NSViewController!
@@ -134,6 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             statusItem.button?.target = self; statusItem.button?.action = #selector(toggle)
             statusItem.button?.sendAction(on: [.leftMouseUp])
+            configureStatusSelection()
             updateStatus(0)
             try service.start(); server.start(); model.refresh()
             if ProcessInfo.processInfo.environment["AGENTNOTIFY_PREVIEW"] == "1" { show() }
@@ -165,7 +185,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         updateStatusHighlight()
     }
     private func updateStatusHighlight() {
-        statusItem?.button?.highlight(inboxIsVisible)
+        guard let button = statusItem?.button else { return }
+        let selected = inboxIsVisible
+        button.highlight(selected)
+        statusSelectionView?.isSelected = selected
+    }
+    private func configureStatusSelection() {
+        guard let button = statusItem?.button, let container = button.superview else { return }
+        let selection = StatusSelectionView()
+        selection.translatesAutoresizingMaskIntoConstraints = false
+        selection.isSelected = false
+        container.addSubview(selection, positioned: .below, relativeTo: button)
+        NSLayoutConstraint.activate([
+            selection.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: -1.5),
+            selection.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: 1.5),
+            selection.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            selection.heightAnchor.constraint(equalToConstant: 24)
+        ])
+        statusSelectionView = selection
     }
     private func refreshNotifications() {
         guard let service, let tracker = arrivalTracker else { return }
@@ -293,6 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     }
     private func closeSurface() {
         let wasVisible = inboxIsVisible
+        let closingPopover = !usesPanel && popover.isShown
         model.arrivalIDs.removeAll()
         hoverDismissal.stop()
         if usesPanel {
@@ -300,7 +338,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             if !model.detached { manuallyPlaced = false }
         } else { popover.performClose(nil) }
         if wasVisible { bumpInterfaceRevision() }
-        updateStatusHighlight()
+        if !closingPopover { updateStatusHighlight() }
     }
     func popoverDidClose(_ notification: Notification) {
         // A transient popover closes on the mouse-down over its status item.
@@ -315,7 +353,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         model.arrivalIDs.removeAll()
         hoverDismissal.stop()
         anchorWindow?.orderOut(nil)
-        updateStatusHighlight()
+        // Native menu extras remain selected through their closing motion and
+        // release the highlight just after the attached surface disappears.
+        Timer.scheduledTimer(withTimeInterval: 0.08, repeats: false) { [weak self] _ in
+            guard let self, !self.inboxIsVisible else { return }
+            self.updateStatusHighlight()
+        }
     }
     private func configurePopover() {
         // A popover caches its positioning window and content frame. Never
@@ -429,7 +472,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             show()
             settle()
             try require(statusItem.length == NSStatusItem.variableLength, "Menu-bar item did not use its native intrinsic width.")
-            try require(statusItem.button?.cell?.isHighlighted == true, "Visible inbox did not highlight its menu-bar item.")
+            try require(statusSelectionView?.isHidden == false, "Visible inbox did not draw its menu-bar selection capsule.")
             var frames: [[String: String]] = []
             for _ in 0..<4 {
                 guard let before = contentScreenFrame, let screen = menuBarAnchor?.screen, let openingAnchor = anchorWindow?.frame else { throw NotifyError("internal_error", "No initial anchored content.") }
@@ -484,7 +527,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             toggleDetached(); settle()
             closeSurface()
             settle()
-            try require(statusItem.button?.cell?.isHighlighted != true, "Closed inbox left its menu-bar item highlighted.")
+            try require(statusSelectionView?.isHidden == true, "Closed inbox left its menu-bar selection capsule visible.")
             try require(!popover.isShown && anchorWindow?.isVisible != true, "Closing left the popover or positioning window visible.")
             var arrivalGeometry: [[String: String]] = []
             for x in [screen.frame.minX, screen.frame.maxX - 22] {
