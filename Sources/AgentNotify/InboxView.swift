@@ -152,7 +152,7 @@ struct InboxView: View {
             Text(model.visible.count.formatted()).font(.system(size: 13)).monospacedDigit().foregroundStyle(.secondary).accessibilityLabel("\(model.visible.count) notifications")
             InboxDragRegion().frame(minWidth: 6, maxWidth: .infinity).frame(height: 28)
             IconButton(symbol: "magnifyingglass", label: "Search Notifications") { model.searchVisible.toggle(); searchFocused = model.searchVisible }
-            Menu {
+            IconMenu(symbol: model.group != nil || model.period != "any" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease", size: 28) {
                 Menu("Group") {
                     Button("All Groups") { model.group = nil }
                     ForEach(model.groups, id: \.self) { group in Button(group) { model.group = group } }
@@ -163,10 +163,9 @@ struct InboxView: View {
                     Button("Last 7 Days") { model.period = "week" }
                 }
                 if model.group != nil || model.period != "any" { Button("Clear Filters") { model.group = nil; model.period = "any" } }
-            } label: { IconMenuLabel(symbol: model.group != nil || model.period != "any" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease", width: 28, height: 28) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Filter by Group or Time").accessibilityLabel("Filter by Group or Time")
+            }.help("Filter by Group or Time").accessibilityLabel("Filter by Group or Time")
             IconButton(symbol: model.detached ? "pin.fill" : "pin", label: model.detached ? "Unpin Inbox" : "Pin Inbox") { model.onDetach?() }
-            Menu {
+            IconMenu(symbol: "ellipsis", size: 28) {
                 Button("Mark All Read") { model.markAllRead() }
                     .disabled(!model.visible.contains { $0.readAt == nil })
                 Button("Complete All…") { model.confirmingCompleteAll = true }
@@ -175,8 +174,7 @@ struct InboxView: View {
                 Button("Close Inbox") { model.onClose?() }
                 Button("Preferences…") { model.onPreferences?() }.disabled(model.onPreferences == nil)
                 Button("Quit AgentNotify") { model.onQuit?() }
-            } label: { IconMenuLabel(symbol: "ellipsis", width: 28, height: 28) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More Options").accessibilityLabel("More Options")
+            }.help("More Options").accessibilityLabel("More Options")
         }.padding(.leading, 20).padding(.trailing, 14).padding(.top, 18).padding(.bottom, 20)
     }
     private var completeAllTitle: String {
@@ -270,8 +268,8 @@ struct NotificationRow: View {
         }
     }
     private var rowMenu: some View {
-        Menu { menuContents } label: { IconMenuLabel(symbol: "ellipsis", width: 24, height: 24) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Notification Options")
+        IconMenu(symbol: "ellipsis", size: 24) { menuContents }
+            .accessibilityLabel("Notification Options")
     }
     @ViewBuilder private var menuContents: some View {
         Button(item.readAt == nil ? "Mark Read" : "Mark Unread") { model.call("status", ["id": item.id, "state": item.readAt == nil ? "read" : "unread", "expectedRevision": item.revision]) }

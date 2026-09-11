@@ -14,16 +14,31 @@ extension View {
     func iconHoverHighlight() -> some View { modifier(IconHoverHighlight()) }
 }
 
-struct IconMenuLabel: View {
+struct IconMenu<Content: View>: View {
     let symbol: String
-    let width: CGFloat
-    let height: CGFloat
+    let size: CGFloat
+    private let content: () -> Content
+
+    init(symbol: String, size: CGFloat, @ViewBuilder content: @escaping () -> Content) {
+        self.symbol = symbol
+        self.size = size
+        self.content = content
+    }
 
     var body: some View {
-        Image(systemName: symbol)
-            .frame(width: width, height: height)
-            .contentShape(Rectangle())
-            .iconHoverHighlight()
+        ZStack {
+            Menu(content: content) {
+                Image(systemName: symbol)
+                    .frame(width: size, height: size)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+        }
+        .frame(width: size, height: size)
+        .contentShape(Rectangle())
+        .iconHoverHighlight()
     }
 }
 
