@@ -208,14 +208,15 @@ struct NotificationRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 10) {
-                Toggle(isOn: Binding(get: { item.status == "done" }, set: { completed in
-                    if completed { model.done(item) }
-                    else { model.call("status", ["id": item.id, "state": "reopen", "expectedRevision": item.revision]) }
-                })) { Text(item.title) }
-                .toggleStyle(.checkbox).labelsHidden().tint(.primary)
-                .frame(width: 26, height: 26)
-                .help(item.status == "done" ? "Reopen Notification" : "Mark Done")
-                .accessibilityLabel("Completed: \(item.title)")
+                NotificationCompleteButton(
+                    action: {
+                        if item.status == "done" { model.call("status", ["id": item.id, "state": "reopen", "expectedRevision": item.revision]) }
+                        else { model.done(item) }
+                    },
+                    help: item.status == "done" ? "Reopen Notification" : "Mark Done",
+                    accessibilityLabel: item.status == "done" ? "Reopen notification: \(item.title)" : "Complete notification: \(item.title)",
+                    accessibilityHint: item.status == "done" ? "Returns this notification to the Inbox" : "Moves this notification to Done"
+                )
                 .disabled(["removed", "superseded"].contains(item.status))
                 VStack(alignment: .leading, spacing: 5) {
                     Button { model.select(item) } label: {

@@ -52,7 +52,7 @@ struct ArrivalSurface: View {
                 }
             }
             HStack(spacing: 4) {
-                if let complete { ArrivalCompleteButton(action: complete) }
+                if let complete { NotificationCompleteButton(action: complete) }
                 ArrivalDismissButton(action: dismiss)
             }
                 .opacity(hovered ? 0.9 : 0.55)
@@ -66,24 +66,6 @@ struct ArrivalSurface: View {
         .accessibilityActions {
             if let complete { Button("Complete notification", action: complete) }
         }
-    }
-}
-
-private struct ArrivalCompleteButton: View {
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help("Mark Done")
-        .accessibilityLabel("Complete notification")
-        .accessibilityHint("Moves this notification to Done")
     }
 }
 
