@@ -132,6 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             configurePopover()
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             statusItem.button?.target = self; statusItem.button?.action = #selector(toggle)
+            // Act before a transient popover handles the same click as an
+            // outside dismissal and leaves the later mouse-up free to reopen it.
+            statusItem.button?.sendAction(on: [.leftMouseDown])
             updateStatus(0)
             try service.start(); server.start(); model.refresh()
             if ProcessInfo.processInfo.environment["AGENTNOTIFY_PREVIEW"] == "1" { show() }
