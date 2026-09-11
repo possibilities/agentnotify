@@ -30,6 +30,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     private var pendingArrivalIDs: [String] = []
     private var arrivalAnchor: NSRect?
     private var openingAnchor: NSRect?
+    private var suppressNextStatusItemAction = false
+    private var statusItemActionIsClosingSurface = false
     private let interfaceInstanceID = UUID().uuidString.lowercased()
     private var interfaceRevision = 1
     private var interfaceObservation: AnyCancellable?
@@ -131,9 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             configurePopover()
             statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
             statusItem.button?.target = self; statusItem.button?.action = #selector(toggle)
-            // Act before a transient popover handles the same click as an
-            // outside dismissal and leaves the later mouse-up free to reopen it.
-            statusItem.button?.sendAction(on: [.leftMouseDown])
+            statusItem.button?.sendAction(on: [.leftMouseUp])
             updateStatus(0)
             try service.start(); server.start(); model.refresh()
             if ProcessInfo.processInfo.environment["AGENTNOTIFY_PREVIEW"] == "1" { show() }
@@ -166,14 +166,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     }
     private func updateStatusHighlight() {
         statusItem?.button?.highlight(inboxIsVisible)
-        // The status item acts on mouse-down so a second click can close a
-        // transient popover without immediately reopening it. AppKit finishes
-        // the button's tracking on the later mouse-up and clears its pressed
-        // highlight, so restore the appearance after that tracking completes.
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.statusItem?.button?.highlight(self.inboxIsVisible)
-        }
     }
     private func refreshNotifications() {
         guard let service, let tracker = arrivalTracker else { return }
@@ -226,7 +218,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         let top = min(anchor.rect.minY - 13, screen.maxY - 8)
         return NSRect(x: x, y: max(screen.minY + 8, top - size.height), width: size.width, height: size.height)
     }
-    @objc private func toggle() { if popover.isShown || panel?.isVisible == true { closeSurface() } else { show() } }
+    @objc private func toggle() {
+        if suppressNextStatusItemAction {
+            suppressNextStatusItemAction = false
+            return
+        }
+        if popover.isShown || panel?.isVisible == true {
+            statusItemActionIsClosingSurface = true
+            defer { statusItemActionIsClosingSurface = false }
+            closeSurface()
+        } else { show() }
+    }
     private func showPreferences() {
         let wasVisible = preferencesWindow?.window?.isVisible == true
         if !model.detached { closeSurface() }
@@ -301,6 +303,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
         updateStatusHighlight()
     }
     func popoverDidClose(_ notification: Notification) {
+        // A transient popover closes on the mouse-down over its status item.
+        // The button's normal mouse-up action arrives afterward; consume that
+        // one action instead of reopening the inbox. Keeping the native
+        // mouse-up lifecycle also preserves AppKit's selected menu-bar style.
+        if !statusItemActionIsClosingSurface,
+           NSApp.currentEvent?.type == .leftMouseDown,
+           statusScreenFrame?.contains(NSEvent.mouseLocation) == true {
+            suppressNextStatusItemAction = true
+        }
         model.arrivalIDs.removeAll()
         hoverDismissal.stop()
         anchorWindow?.orderOut(nil)
@@ -400,14 +411,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
     }
     #if DEBUG
     private func verifyPanel(_ output: String) {
-        show()
-        // Model the highlight reset performed when a mouse-down action's
-        // button tracking subsequently finishes on mouse-up. Continue on the
-        // next main-queue turn so the deferred restoration can run first.
-        statusItem.button?.highlight(false)
-        DispatchQueue.main.async { [weak self] in self?.verifyPanelAfterButtonTracking(output) }
-    }
-    private func verifyPanelAfterButtonTracking(_ output: String) {
         do {
             func require(_ condition: Bool, _ message: String) throws {
                 if !condition { throw NotifyError("internal_error", message) }
@@ -423,9 +426,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, Not
             try require(notched.maxY == 944, "Hidden menu anchor crossed the display's safe top edge.")
             let directory = URL(fileURLWithPath: output)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            show()
             settle()
             try require(statusItem.length == NSStatusItem.variableLength, "Menu-bar item did not use its native intrinsic width.")
-            try require(statusItem.button?.cell?.isHighlighted == true, "Visible inbox did not restore its menu-bar highlight after button tracking.")
+            try require(statusItem.button?.cell?.isHighlighted == true, "Visible inbox did not highlight its menu-bar item.")
             var frames: [[String: String]] = []
             for _ in 0..<4 {
                 guard let before = contentScreenFrame, let screen = menuBarAnchor?.screen, let openingAnchor = anchorWindow?.frame else { throw NotifyError("internal_error", "No initial anchored content.") }
