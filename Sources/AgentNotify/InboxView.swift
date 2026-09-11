@@ -163,8 +163,8 @@ struct InboxView: View {
                     Button("Last 7 Days") { model.period = "week" }
                 }
                 if model.group != nil || model.period != "any" { Button("Clear Filters") { model.group = nil; model.period = "any" } }
-            } label: { Image(systemName: model.group != nil || model.period != "any" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease").frame(width: 28, height: 28) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().iconHoverHighlight().help("Filter by Group or Time").accessibilityLabel("Filter by Group or Time")
+            } label: { IconMenuLabel(symbol: model.group != nil || model.period != "any" ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease", width: 28, height: 28) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Filter by Group or Time").accessibilityLabel("Filter by Group or Time")
             IconButton(symbol: model.detached ? "pin.fill" : "pin", label: model.detached ? "Unpin Inbox" : "Pin Inbox") { model.onDetach?() }
             Menu {
                 Button("Mark All Read") { model.markAllRead() }
@@ -175,8 +175,8 @@ struct InboxView: View {
                 Button("Close Inbox") { model.onClose?() }
                 Button("Preferences…") { model.onPreferences?() }.disabled(model.onPreferences == nil)
                 Button("Quit AgentNotify") { model.onQuit?() }
-            } label: { Image(systemName: "ellipsis").frame(width: 22, height: 28) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().iconHoverHighlight().help("More Options").accessibilityLabel("More Options")
+            } label: { IconMenuLabel(symbol: "ellipsis", width: 28, height: 28) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More Options").accessibilityLabel("More Options")
         }.padding(.leading, 20).padding(.trailing, 14).padding(.top, 18).padding(.bottom, 20)
     }
     private var completeAllTitle: String {
@@ -270,8 +270,8 @@ struct NotificationRow: View {
         }
     }
     private var rowMenu: some View {
-        Menu { menuContents } label: { Image(systemName: "ellipsis").frame(width: 22, height: 20) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().iconHoverHighlight().accessibilityLabel("Notification Options")
+        Menu { menuContents } label: { IconMenuLabel(symbol: "ellipsis", width: 24, height: 24) }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().accessibilityLabel("Notification Options")
     }
     @ViewBuilder private var menuContents: some View {
         Button(item.readAt == nil ? "Mark Read" : "Mark Unread") { model.call("status", ["id": item.id, "state": item.readAt == nil ? "read" : "unread", "expectedRevision": item.revision]) }

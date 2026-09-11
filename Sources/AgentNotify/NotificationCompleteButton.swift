@@ -14,6 +14,19 @@ extension View {
     func iconHoverHighlight() -> some View { modifier(IconHoverHighlight()) }
 }
 
+struct IconMenuLabel: View {
+    let symbol: String
+    let width: CGFloat
+    let height: CGFloat
+
+    var body: some View {
+        Image(systemName: symbol)
+            .frame(width: width, height: height)
+            .contentShape(Rectangle())
+            .iconHoverHighlight()
+    }
+}
+
 struct CompactIconButton: View {
     let symbol: String
     let action: () -> Void
