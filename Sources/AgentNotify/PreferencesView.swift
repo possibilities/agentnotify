@@ -7,6 +7,7 @@ final class PreferencesModel: ObservableObject {
     @Published var error: String?
     @Published private(set) var shimInstalled = false
     @Published private(set) var shimAvailable = false
+    @Published private(set) var originalNotifier: String?
     @Published private(set) var installingShim = false
     @Published var shortcutError: String?
     let preview = ArrivalViewModel(content: ArrivalContent(
@@ -42,6 +43,12 @@ final class PreferencesModel: ObservableObject {
             let shim = try service.call("shimStatus")
             shimInstalled = shim["installed"] as? Bool == true
             shimAvailable = shim["available"] as? Bool == true
+            originalNotifier = shim["originalNotifier"] as? String
+            if let path = originalNotifier {
+                error = NotificationShim.originalNotifierError(path: path).message
+            } else if error?.hasPrefix("Homebrew terminal-notifier is still installed") == true {
+                error = nil
+            }
             onChange?(value)
         } catch { self.error = "Could not load preferences. \(error.localizedDescription)" }
     }
@@ -53,7 +60,13 @@ final class PreferencesModel: ObservableObject {
             let result = Result { try service.call("installShim") }
             DispatchQueue.main.async {
                 self.installingShim = false
-                if case .failure(let error) = result { self.error = "Could not install the shim. \(error.localizedDescription)" }
+                if case .failure(let error) = result {
+                    if let notify = error as? NotifyError, notify.code == "original_notifier_present" {
+                        self.error = notify.message
+                    } else {
+                        self.error = "Could not install the shim. \(error.localizedDescription)"
+                    }
+                }
                 self.refresh()
             }
         }
@@ -67,7 +80,7 @@ final class PreferencesModel: ObservableObject {
         guard status["installed"] as? Bool != true, status["available"] as? Bool == true else { return }
         let alert = NSAlert()
         alert.messageText = "Use AgentNotify from your terminal?"
-        alert.informativeText = "Install a terminal-notifier shim so your existing scripts send notifications to AgentNotify. The original notifier stays available as a fallback.\n\nThe shim goes in ~/.local/bin. Keep that folder before Homebrew on your shell’s PATH. You can also install it later in Preferences."
+        alert.informativeText = "Install a terminal-notifier shim so existing scripts send notifications to AgentNotify.\n\nHomebrew’s terminal-notifier must already be uninstalled (brew uninstall terminal-notifier). If it remains, launchd and scripts keep posting macOS banners.\n\nThe shim goes in ~/.local/bin. You can also install it later in Preferences."
         alert.addButton(withTitle: "Install shim")
         alert.addButton(withTitle: "Not now")
         alert.beginSheetModal(for: window) { if $0 == .alertFirstButtonReturn { install() } }
@@ -109,7 +122,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
     init(model: PreferencesModel) {
         self.model = model
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 512, height: 688),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 512, height: 760),
             styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "Preferences"
         window.isReleasedWhenClosed = false
@@ -117,7 +130,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
         let host = NSHostingController(rootView: PreferencesView(model: model))
         host.sizingOptions = []
         window.contentViewController = host
-        window.setContentSize(NSSize(width: 512, height: 688))
+        window.setContentSize(NSSize(width: 512, height: 760))
         super.init(window: window)
         window.delegate = self
         window.center()
@@ -154,9 +167,13 @@ struct PreferencesView: View {
                     Button(model.installingShim ? "Installing…" : (model.shimInstalled ? "Reinstall shim" : "Install shim")) { model.installShim() }
                         .disabled(model.installingShim || !model.shimAvailable)
                 }
-                Text("Send terminal-notifier calls to AgentNotify. The original stays available as a fallback.")
+                Text(model.originalNotifier == nil
+                     ? "Send terminal-notifier calls to AgentNotify."
+                     : "Send terminal-notifier calls to AgentNotify. Homebrew terminal-notifier must be uninstalled first.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
-                Text(model.shimInstalled ? "Installed in ~/.local/bin. Keep it first on your shell’s PATH." : (model.shimAvailable ? "Installs in ~/.local/bin. Keep it first on your shell’s PATH." : "Install AgentStart to enable this integration."))
+                Text(model.originalNotifier != nil
+                     ? "Installs in ~/.local/bin after Homebrew terminal-notifier is removed."
+                     : (model.shimInstalled ? "Installed in ~/.local/bin." : (model.shimAvailable ? "Installs in ~/.local/bin." : "Install AgentStart to enable this integration.")))
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             if let error = model.error {
@@ -168,7 +185,7 @@ struct PreferencesView: View {
         }
         .padding(28)
         }
-        .frame(width: 512, height: 688, alignment: .topLeading)
+        .frame(width: 512, height: 760, alignment: .topLeading)
         .background(Color(nsColor: .windowBackgroundColor))
         .tint(.primary)
     }

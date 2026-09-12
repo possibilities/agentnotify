@@ -54,4 +54,5 @@ run("preferences.concurrent_clients_and_service_routing") { let suite = Preferen
 run("interface.routing_and_headless_failure") { let suite = InterfaceChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.routingAndHeadlessFailure() }
 run("shim.offer_durability_and_missing_installer") { let suite = ShimChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.offerDurabilityAndUnavailableInstaller() }
 run("shim.owner_delegation_and_detection") { let suite = ShimChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.installerDelegationAndDetection() }
+run("shim.original_notifier_blocks_install") { let suite = ShimChecks(); try suite.setUpWithError(); defer { try? suite.tearDownWithError() }; try suite.originalNotifierBlocksInstallAndIsIgnoredWhenItIsTheManagedRouter() }
 print("\(checks) core checks passed.")

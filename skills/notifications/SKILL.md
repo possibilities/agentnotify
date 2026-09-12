@@ -57,12 +57,12 @@ UI selection and navigation never mark a notification read or execute a callback
 
 AgentStart exposes the full MCP in managed Codex, Claude, and AgentVoice sessions and authenticated HTTP fleet/Grok toolsets. HTTP names have the `agentnotify_` prefix, such as `agentnotify_send` and `agentnotify_preferences`; use the tools advertised by the current client. A running stdio session retains its loaded tool catalog until that session ends.
 
-`shimStatus` checks PATH-router setup. Only when the human asks, `installShim` installs the existing AgentStart router in `~/.local/bin`; the original terminal-notifier remains the fallback. `dismissShimSetup` records that the one-time offer was handled without installing. Preferences provides the same opt-in action. Neither command changes shell profiles; `~/.local/bin` must precede the original notifier on PATH. These operations require the fleet installer owner, not a per-agent replacement script.
+`shimStatus` checks PATH-router setup and whether Homebrew `terminal-notifier` is still linked. Only when the human asks, `installShim` installs the existing AgentStart router in `~/.local/bin`. It fails with `original_notifier_present` until that Homebrew formula is uninstalled (`brew uninstall terminal-notifier`). `dismissShimSetup` records that the one-time offer was handled without installing. Preferences provides the same opt-in action and shows the same error. Neither command changes shell profiles or uninstalls Homebrew. These operations require the fleet installer owner, not a per-agent replacement script.
 
 ## Diagnose and replacement
 
 Run `diagnose` to inspect store counts, app connection, and the AgentNotify-only presentation policy. `-list ALL` uses AgentNotify's durable active projection; `list --filter all` includes durable history, including removed and replaced records. macOS notification authorization is irrelevant because AgentNotify never requests UserNotifications delivery.
 
-`agentnotify` is usable anywhere a script previously invoked `terminal-notifier`. The installer can optionally add a PATH-level terminal-notifier symlink; it never overwrites Homebrew or vendored binaries. Ruby callers can set `TERMINAL_NOTIFIER_BIN` to the absolute agentnotify path before loading the gem. Hardcoded paths must be changed at their owning source.
+`agentnotify` is usable anywhere a script previously invoked `terminal-notifier`. The installer can optionally add a PATH-level terminal-notifier symlink; it never overwrites a foreign binary. Homebrew `terminal-notifier` must not remain linked, or PATH callers will miss the shim. Ruby callers can set `TERMINAL_NOTIFIER_BIN` to the absolute agentnotify path before loading the gem. Hardcoded paths must be changed at their owning source.
 
 AgentStart owns fleet installation, MCP inventory, and the shared skill scan. Do not write private per-harness registries or restart AgentVoice/Herdr to advertise this tool.

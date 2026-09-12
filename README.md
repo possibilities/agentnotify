@@ -11,7 +11,7 @@ open dist/AgentNotify.app
 
 Click the tray in the menu bar. Its count shows unfinished notifications, including those already read. AgentNotify's own compact preview beneath the tray is the sole arrival presentation: the app never posts macOS notification banners, sounds, or Notification Center entries. The preview shows the latest arrival, stays until dismissed, opened, or completed, and summarizes unread notifications plus any read items that still need attention. Clicking opens and reads the displayed notification in the full inbox; its Complete control durably moves that item to Done, then advances to the next item in the current arrival burst or dismisses the preview when none remain. Dismissing alone never completes the task. More → Preferences lets you choose Queue Peek (default), Compact Toast, or Queue Shelf. Settings persist across restarts.
 
-The first inbox opening offers to install a terminal-notifier shim through AgentStart. Choose Not now to skip it; More → Preferences → Terminal integration keeps an Install shim button for later. An existing fleet shim is recognized automatically. The original notifier stays available as a fallback.
+The first inbox opening offers to install a terminal-notifier shim through AgentStart. Homebrew `terminal-notifier` must already be uninstalled (`brew uninstall terminal-notifier`); otherwise the offer and Preferences explain why and how to remove it. Choose Not now to skip it; More → Preferences → Terminal integration keeps an Install shim button for later. An existing fleet shim is recognized automatically.
 
 ## Terminal-notifier replacement
 
@@ -76,7 +76,7 @@ scripts/install.sh --install
 scripts/install.sh --install --terminal-notifier
 ```
 
-The installer requires a clean checkout and refuses foreign destinations. An identical signed release is left running unchanged; replacing an older running release requires quitting it first. The installer never launches or restarts the app. It installs to `~/Applications/AgentNotify.app` and `~/.local/bin/agentnotify`. Ensure `~/.local/bin` precedes Homebrew for the optional legacy alias. Ruby callers can set `TERMINAL_NOTIFIER_BIN` before loading the gem. Hardcoded/vendored paths require changes at their owning source.
+The installer requires a clean checkout and refuses foreign destinations. An identical signed release is left running unchanged; replacing an older running release requires quitting it first. The installer never launches or restarts the app. It installs to `~/Applications/AgentNotify.app` and `~/.local/bin/agentnotify`. The Preferences/CLI shim installer refuses while Homebrew `terminal-notifier` is still linked. Ruby callers can set `TERMINAL_NOTIFIER_BIN` before loading the gem. Hardcoded/vendored paths require changes at their owning source.
 
 Existing MCP clients launched through the installed entrypoints remain running during atomic app replacement. They keep their loaded CLI contract until their session ends; subsequent processes use the new release. The app, headless service, and interactive CLI waiters must exit before replacement.
 
