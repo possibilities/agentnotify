@@ -64,6 +64,7 @@ struct InboxPointer: Shape {
 struct InboxView: View {
     @ObservedObject var model: InboxModel
     @FocusState private var searchFocused: Bool
+    @State private var scrollViewportHeight: CGFloat = 0
     var body: some View {
         VStack(spacing: 0) {
             controls
@@ -109,11 +110,15 @@ struct InboxView: View {
                                 NotificationRow(item: item, model: model).id(item.id)
                             }
                         }.padding(.horizontal, 8).padding(.bottom, 12)
+                        .frame(minHeight: scrollViewportHeight, alignment: .top)
+                        .background { if model.presentedAsPanel { InboxDragRegion() } }
                     }
-                    // Fill the visible viewport, not the content height. Sizing
-                    // the stack to GeometryReader.minHeight retriggers SwiftUI
-                    // transactions every runloop and spins Menu accessibility.
-                    .background { if model.presentedAsPanel { InboxDragRegion() } }
+                    // Observe the viewport without putting a GeometryReader in
+                    // the layout tree. Equatable geometry updates keep sparse
+                    // blank space draggable without spinning Menu accessibility.
+                    .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height in
+                        if abs(scrollViewportHeight - height) > 0.5 { scrollViewportHeight = height }
+                    }
                     .onChange(of: model.selected) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
                 }
             }

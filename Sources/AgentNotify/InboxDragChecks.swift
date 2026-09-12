@@ -8,6 +8,18 @@ enum InboxDragChecks {
             if let dragView = view as? InboxDragRegion.DragView { return dragView }
             return view.subviews.lazy.compactMap { findDragView($0) }.first
         }
+        func findScrollView(_ view: NSView) -> NSScrollView? {
+            if let scrollView = view as? NSScrollView { return scrollView }
+            return view.subviews.lazy.compactMap { findScrollView($0) }.first
+        }
+        func enclosingDragView(_ view: NSView?) -> InboxDragRegion.DragView? {
+            var current = view
+            while let candidate = current {
+                if let dragView = candidate as? InboxDragRegion.DragView { return dragView }
+                current = candidate.superview
+            }
+            return nil
+        }
         guard let content = panel.contentView, let dragView = findDragView(content) else {
             throw NotifyError("internal_error", "No header drag region in the actual panel.")
         }
@@ -21,6 +33,26 @@ enum InboxDragChecks {
             return NSEvent(cgEvent: CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: quartz, mouseButton: .left)!)!
         }
         try require(!panel.isMovableByWindowBackground && !dragView.mouseDownCanMoveWindow, "Native background dragging competes with the header.")
+        guard let scrollView = findScrollView(content) else {
+            throw NotifyError("internal_error", "No notification scroll view in the actual panel.")
+        }
+        let clip = scrollView.contentView
+        let blankPoint = clip.convert(NSPoint(x: clip.bounds.midX, y: clip.bounds.midY), to: content)
+        let blankHit = content.hitTest(blankPoint)
+        let blankHitName = blankHit.map { String(reflecting: type(of: $0)) } ?? "nil"
+        let documentFrame = scrollView.documentView?.frame.debugDescription ?? "nil"
+        guard let blankDragView = enclosingDragView(blankHit) else {
+            throw NotifyError("internal_error", "Sparse blank space in the notification list is not draggable (hit \(blankHitName), clip \(clip.bounds), document \(documentFrame)).")
+        }
+        let blankOrigin = panel.frame.origin
+        let blankWindowPoint = content.convert(blankPoint, to: nil)
+        let blankInitialPointer = panel.convertPoint(toScreen: blankWindowPoint)
+        let blankPointer = NSPoint(x: blankInitialPointer.x + 24, y: blankInitialPointer.y - 16)
+        blankDragView.mouseDown(with: event(.leftMouseDown, blankInitialPointer))
+        blankDragView.mouseDragged(with: event(.leftMouseDragged, blankPointer))
+        try require(panel.frame.origin == NSPoint(x: blankOrigin.x + 24, y: blankOrigin.y - 16),
+                    "Sparse blank-space drag did not move the panel through its hit region.")
+        blankDragView.mouseUp(with: event(.leftMouseUp, blankPointer))
         let initialOrigin = panel.frame.origin
         let localStart = NSPoint(x: 180, y: panel.frame.height - 32)
         let initialPointer = panel.convertPoint(toScreen: localStart)
@@ -52,7 +84,7 @@ enum InboxDragChecks {
         pointer.x -= 45; pointer.y += 20
         dragView.mouseDragged(with: event(.leftMouseDragged, pointer))
         try require(panel.frame.origin == NSPoint(x: releasedOrigin.x - 45, y: releasedOrigin.y + 20), "A new drag reused the previous grab offset.")
-        return ["queued local coordinates cannot move the screen grab point", "repeated drag events do not accumulate movement", "direction reversals return to the starting position", "mouse-up ends dragging and a new grab resets the offset"]
+        return ["sparse scroll blank space reaches and moves through its drag region", "queued local coordinates cannot move the screen grab point", "repeated drag events do not accumulate movement", "direction reversals return to the starting position", "mouse-up ends dragging and a new grab resets the offset"]
     }
 }
 #endif

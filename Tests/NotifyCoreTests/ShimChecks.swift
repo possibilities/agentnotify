@@ -28,6 +28,7 @@ final class ShimChecks: StoreTestsBase {
         #!/bin/bash
         set -euo pipefail
         [ "$AGENTSTART_INSTALL_BIN_DIR" = "$HOME/.local/bin" ]
+        [ "$AGENTSTART_TERMINAL_NOTIFIER_PREFIXES" = "$HOME/.agentnotify-isolated-original-prefix" ]
         mkdir -p "$AGENTSTART_INSTALL_BIN_DIR"
         printf '#!/bin/bash\\n# agentstart-installer-owned: terminal-notifier.router.v1\\n' > "$AGENTSTART_INSTALL_BIN_DIR/terminal-notifier"
         chmod 755 "$AGENTSTART_INSTALL_BIN_DIR/terminal-notifier"
@@ -52,10 +53,12 @@ final class ShimChecks: StoreTestsBase {
     func originalNotifierBlocksInstallAndIsIgnoredWhenItIsTheManagedRouter() throws {
         let helper = root.appendingPathComponent("installer")
         let stamp = root.appendingPathComponent("installer-ran")
+        let prefixStamp = root.appendingPathComponent("installer-prefixes")
         let script = """
         #!/bin/bash
         set -euo pipefail
         printf ran > "$HOME/installer-ran"
+        printf '%s' "$AGENTSTART_TERMINAL_NOTIFIER_PREFIXES" > "$HOME/installer-prefixes"
         mkdir -p "$AGENTSTART_INSTALL_BIN_DIR"
         printf '#!/bin/bash\\n# agentstart-installer-owned: terminal-notifier.router.v1\\n' > "$AGENTSTART_INSTALL_BIN_DIR/terminal-notifier"
         chmod 755 "$AGENTSTART_INSTALL_BIN_DIR/terminal-notifier"
@@ -90,12 +93,17 @@ final class ShimChecks: StoreTestsBase {
         expectEqual(installed["installed"] as? Bool, true)
         expectTrue(installed["originalNotifier"] is NSNull)
         expectTrue(FileManager.default.fileExists(atPath: stamp.path))
+        expectEqual(try String(contentsOf: prefixStamp, encoding: .utf8), brew.path)
 
-        let managed = NotificationShim(
-            home: root, installer: helper,
-            originalPrefixes: [root.appendingPathComponent(".local")]
+        let managedPrefix = root.appendingPathComponent("usr/local")
+        try FileManager.default.createDirectory(at: managedPrefix.appendingPathComponent("bin"), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(
+            at: managedPrefix.appendingPathComponent("bin/terminal-notifier"),
+            withDestinationURL: root.appendingPathComponent(".local/bin/terminal-notifier")
         )
+        let managed = NotificationShim(home: root, installer: helper, originalPrefixes: [managedPrefix])
         expectTrue(managed.status()["originalNotifier"] is NSNull)
         _ = try managed.install()
+        expectEqual(try String(contentsOf: prefixStamp, encoding: .utf8), managedPrefix.path)
     }
 }

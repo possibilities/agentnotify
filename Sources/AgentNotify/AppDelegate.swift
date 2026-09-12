@@ -476,6 +476,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
                 try require(contentScreenFrame == initial, "Repeated show/menu movement repositioned the inbox.")
             }
             verificationAnchor = nil
+            guard let service else { throw NotifyError("internal_error", "Native panel check lost its service.") }
+            _ = try service.store.perform("send", params: [
+                "title": "Sparse inbox drag check",
+                "message": "One row leaves blank scroll space beneath it.",
+            ])
+            model.refresh()
+            settle()
             toggleDetached()
             settle()
             let dragChecks = try InboxDragChecks.run(panel: panel)

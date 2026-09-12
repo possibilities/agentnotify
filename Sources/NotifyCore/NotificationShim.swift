@@ -68,6 +68,13 @@ public final class NotificationShim {
         var environment = ProcessInfo.processInfo.environment
         environment["HOME"] = home.path
         environment["AGENTSTART_INSTALL_BIN_DIR"] = home.appendingPathComponent(".local/bin").path
+        // Give the owning installer the same prefix set used by status. An
+        // isolated service supplies a private nonexistent prefix so tests can
+        // never inspect or depend on the operator's Homebrew installation.
+        let installerPrefixes = originalPrefixes.isEmpty
+            ? [home.appendingPathComponent(".agentnotify-isolated-original-prefix")]
+            : originalPrefixes
+        environment["AGENTSTART_TERMINAL_NOTIFIER_PREFIXES"] = installerPrefixes.map(\.path).joined(separator: ":")
         process.environment = environment
         process.standardInput = FileHandle.nullDevice
         let output = Pipe()
@@ -84,8 +91,10 @@ public final class NotificationShim {
     }
 
     private func sameFile(_ left: URL, _ right: URL) -> Bool {
-        guard let leftID = try? left.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier,
-              let rightID = try? right.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
+        let resolvedLeft = left.resolvingSymlinksInPath()
+        let resolvedRight = right.resolvingSymlinksInPath()
+        guard let leftID = try? resolvedLeft.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier,
+              let rightID = try? resolvedRight.resourceValues(forKeys: [.fileResourceIdentifierKey]).fileResourceIdentifier
         else { return false }
         return leftID.isEqual(rightID)
     }
