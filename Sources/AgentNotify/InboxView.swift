@@ -103,18 +103,18 @@ struct InboxView: View {
             if model.visible.isEmpty { emptyState }
             else {
                 ScrollViewReader { proxy in
-                    GeometryReader { geometry in
-                        ScrollView {
-                            LazyVStack(spacing: 0) {
-                                ForEach(model.visible) { item in
-                                    NotificationRow(item: item, model: model).id(item.id)
-                                }
-                            }.padding(.horizontal, 8).padding(.bottom, 12)
-                            .frame(minHeight: geometry.size.height, alignment: .top)
-                            .background { if model.presentedAsPanel { InboxDragRegion() } }
-                        }
-                        .onChange(of: model.selected) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
+                    ScrollView {
+                        LazyVStack(spacing: 0) {
+                            ForEach(model.visible) { item in
+                                NotificationRow(item: item, model: model).id(item.id)
+                            }
+                        }.padding(.horizontal, 8).padding(.bottom, 12)
                     }
+                    // Fill the visible viewport, not the content height. Sizing
+                    // the stack to GeometryReader.minHeight retriggers SwiftUI
+                    // transactions every runloop and spins Menu accessibility.
+                    .background { if model.presentedAsPanel { InboxDragRegion() } }
+                    .onChange(of: model.selected) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
                 }
             }
             if let undoItem = model.undoItem {
@@ -164,7 +164,12 @@ struct InboxView: View {
         HStack(alignment: .center, spacing: 6) {
             Menu {
                 ForEach(model.filters, id: \.0) { key, title in
-                    Button { model.filter = key; model.selected = nil } label: { if model.filter == key { Label(title, systemImage: "checkmark") } else { Text(title) } }
+                    Button {
+                        model.filter = key
+                        model.selected = nil
+                    } label: {
+                        Text(model.filter == key ? "✓ \(title)" : title)
+                    }
                 }
             } label: {
                 HStack(spacing: 8) {
@@ -273,7 +278,7 @@ struct NotificationRow: View {
             if item.actions.count == 1 {
                 Button(item.actions[0]) { model.respond(item, kind: "action", index: 0) }.lineLimit(1).help(item.actions[0])
             } else if item.actions.count > 1 {
-                Menu { ForEach(Array(item.actions.enumerated()), id: \.offset) { index, title in Button(title) { model.respond(item, kind: "action", index: index) } } } label: { HStack(spacing: 5) { Text("Options"); Image(systemName: "chevron.down").font(.system(size: 9)) } }
+                Menu { ForEach(Array(item.actions.enumerated()), id: \.offset) { index, title in Button(title) { model.respond(item, kind: "action", index: index) } } } label: { HStack(spacing: 5) { Text("Options"); Image(systemName: "chevron.down").font(.system(size: 9)).accessibilityHidden(true) } }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().padding(.horizontal, 10).padding(.vertical, 6).background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
             }
             if item.reply != nil { Button("Reply") { replying.toggle(); model.selected = item.id } }
