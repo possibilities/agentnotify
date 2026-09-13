@@ -18,19 +18,28 @@ final class InboxModel: ObservableObject {
     @Published var arrivalIDs: [String] = []
     @Published var confirmingCompleteAll = false
     @Published var error: String?
-    @Published var undoItem: (id: String, revision: Int)? {
+    struct Completion {
+        var items: [(id: String, revision: Int)]
+        let isBulk: Bool
+    }
+    @Published var undoCompletion: Completion? {
         didSet {
             undoTimer?.invalidate(); undoTimer = nil
             undoGeneration += 1
-            guard undoItem != nil else { return }
+            guard undoCompletion != nil else { return }
             let generation = undoGeneration
             let timer = Timer(timeInterval: undoDuration, repeats: false) { [weak self] _ in
                 guard let self, self.undoGeneration == generation else { return }
-                self.undoItem = nil
+                self.undoCompletion = nil
             }
             undoTimer = timer
             RunLoop.main.add(timer, forMode: .common)
         }
+    }
+    // Preserve the single-item interface snapshot for existing clients.
+    var undoItem: (id: String, revision: Int)? {
+        get { guard undoCompletion?.items.count == 1 else { return nil }; return undoCompletion?.items.first }
+        set { undoCompletion = newValue.map { Completion(items: [$0], isBulk: false) } }
     }
     private let undoDuration: TimeInterval
     private var undoTimer: Timer?
@@ -96,15 +105,59 @@ final class InboxModel: ObservableObject {
             return true
         } catch { self.error = error.localizedDescription; return false }
     }
-    func completeAll() {
-        guard inboxCount > 0 else { return }
-        call("completeAll", ["requestId": UUID().uuidString.lowercased()])
-        selected = nil
-        arrivalIDs.removeAll()
+    var completableVisible: [NotificationRecord] { visible.filter(\.isInbox) }
+    func completeVisible() { complete(completableVisible) }
+    // The global shortcut retains its confirmed, whole-Inbox scope.
+    func completeAll() { complete(items.filter(\.isInbox)) }
+    private func complete(_ snapshot: [NotificationRecord]) {
+        guard let service, !snapshot.isEmpty else { return }
+        var completed: [(id: String, revision: Int)] = []
+        do {
+            // statusBatch's shared contract allows 100 exact references per transaction.
+            // Retain successful batches if a later transaction conflicts.
+            for start in stride(from: 0, to: snapshot.count, by: 100) {
+                let references = snapshot[start..<min(start + 100, snapshot.count)].map {
+                    ["id": $0.id, "expectedRevision": $0.revision] as [String: Any]
+                }
+                let result = try service.call("statusBatch", ["items": references, "state": "done", "requestId": UUID().uuidString])
+                let records = try (result["items"] as! [[String: Any]]).map { try JSON.decode(NotificationRecord.self, $0) }
+                completed += records.map { ($0.id, $0.revision) }
+            }
+        } catch { self.error = "Could not complete every matching notification. \(error.localizedDescription)" }
+        if !completed.isEmpty {
+            undoCompletion = Completion(items: completed, isBulk: true)
+            let ids = Set(completed.map(\.id))
+            if let selected, ids.contains(selected) { self.selected = nil }
+            arrivalIDs.removeAll { ids.contains($0) }
+        }
+        refresh()
     }
     func undo() {
-        guard let item = undoItem else { return }
-        call("status", ["id": item.id, "state": "reopen", "expectedRevision": item.revision]); undoItem = nil
+        guard let service, let completion = undoCompletion else { return }
+        var restored = Set<String>()
+        var changed = Set<String>()
+        do {
+            let current = Dictionary(uniqueKeysWithValues: try service.store.all().map { ($0.id, $0) })
+            let eligible = completion.items.filter { reference in
+                guard let item = current[reference.id], item.status == "done", item.revision == reference.revision else {
+                    changed.insert(reference.id); return false
+                }
+                return true
+            }
+            for start in stride(from: 0, to: eligible.count, by: 100) {
+                let batch = eligible[start..<min(start + 100, eligible.count)]
+                let references = batch.map { ["id": $0.id, "expectedRevision": $0.revision] as [String: Any] }
+                _ = try service.call("statusBatch", ["items": references, "state": "reopen", "requestId": UUID().uuidString])
+                restored.formUnion(batch.map(\.id))
+            }
+            undoCompletion = nil
+            if !changed.isEmpty { error = "Restored \(restored.count) notifications. \(changed.count) changed since completion and were left unchanged." }
+        } catch {
+            let remaining = completion.items.filter { !restored.contains($0.id) && !changed.contains($0.id) }
+            undoCompletion = remaining.isEmpty ? nil : Completion(items: remaining, isBulk: completion.isBulk)
+            self.error = "Could not undo every completion. \(error.localizedDescription)"
+        }
+        refresh()
     }
     func respond(_ item: NotificationRecord, kind: String, index: Int? = nil, value: String? = nil) {
         var params: [String: Any] = ["id": item.id, "kind": kind, "expectedRevision": item.revision, "requestId": UUID().uuidString]

@@ -656,7 +656,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             selected["position"] = index + 1; selected["matchingCount"] = visible.count; selected["expanded"] = true
             selection = selected
         }
-        let undo: Any = model.undoItem.map { ["id": $0.id, "expectedRevision": $0.revision] as [String: Any] } ?? NSNull()
+        let undo: Any = model.undoCompletion.map { completion -> [String: Any] in
+            var value: [String: Any] = ["items": completion.items.map { ["id": $0.id, "expectedRevision": $0.revision] as [String: Any] }, "count": completion.items.count]
+            if completion.items.count == 1, let item = completion.items.first {
+                value["id"] = item.id; value["expectedRevision"] = item.revision
+            }
+            return value
+        } ?? NSNull()
         return [
             "instanceId": interfaceInstanceID, "uiRevision": interfaceRevision, "surface": surface,
             "inbox": ["visible": inboxIsVisible, "presentation": inboxIsVisible ? "panel" : "hidden", "pinned": model.detached],

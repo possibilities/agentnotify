@@ -16,13 +16,22 @@ September 10 final results before the clean-checkout installer pass:
 - `scripts/build.sh`: **passed**. Light and dark production renders cover all three arrival styles, the compact Complete control, the `⌥⇧⌘D` default in Preferences, and the absence of banner/authorization/System Settings messaging.
 - `python3 scripts/test-install.py`: **passed from a clean committed checkout**. It covered foreign-file preservation, clean install, legacy aliasing, running-app convergence/refusal, live MCP preservation, the signed source revision, and the deployed-SHA receipt. Final delivery must still verify that local `main`, the installed receipt, and the running executable identify the delivery commit.
 
+## September 13 visible completion checks
+
+- `swift run --skip-build NotifyCoreChecks`: passed, 38 checks.
+- `.build/debug/agentnotify check-feedback`: passed, 13 checks, including combined filters, stale visible snapshots, 105-item completion and Undo, intervening changes, and conflicts between service-sized transactions.
+- `python3 scripts/test-integration.py`: passed, 400 CLI/socket/MCP assertions; disposable state and service cleaned up.
+- `render-previews`: production SwiftUI rendered offscreen. Light and dark header actions and 360-point bulk completion feedback were inspected without clipping.
+- `scripts/build.sh`: passed release packaging and strict signature verification.
+- Live desktop interaction, `scripts/test-interface.py`, and installed/running executable convergence were deferred to delivery because this implementation session has no desktop lease or app restart authorization.
+
 ## Acceptance criteria
 
 - AgentNotify's sticky preview is the sole arrival presentation. Sends are recorded as `accepted` with `nativeRegistered: false`; the app does not request notification authorization or create macOS banners, notification sounds, categories, or Notification Center entries. Launch cleanup withdraws projections left by earlier AgentNotify builds without requesting permission.
 - Arrivals reuse one panel, show the latest item, and remain until explicitly dismissed, opened, or completed. The footer distinguishes unread notifications from read items that still need attention.
 - The preview's Complete activator performs the durable `status done` transition for the displayed identity. Completing an unanswered prompt records close before effects and runs no callback. A successful completion advances within the current burst or dismisses after its final item; failure leaves the item visible.
-- More → Complete All and the global shortcut open the same count-aware confirmation. The default is `⌥⇧⌘D`; Preferences can replace or clear it, recording requires at least two modifiers, and no shortcut silently completes the Inbox.
-- Mark All Read remains distinct from completion. Complete All is atomic, leaves scheduled and snoozed notifications alone, and closes unanswered prompts without running actions or body callbacks.
+- The header checkmark immediately completes visible active notifications and offers one exact-batch Undo. The global shortcut opens a count-aware whole-Inbox confirmation. The default is `⌥⇧⌘D`; Preferences can replace or clear it, recording requires at least two modifiers, and no shortcut silently completes the Inbox.
+- Mark All Read remains distinct from completion. The durable `completeAll` API is atomic, leaves scheduled and snoozed notifications alone, and closes unanswered prompts without running actions or body callbacks.
 - CLI, Unix socket, and MCP remain peers. Terminal-notifier-compatible noninteractive sends succeed on durable acceptance, and legacy `-list ALL`/`-list PENDING` report durable AgentNotify projections rather than UserNotifications state.
 
 ## Manual boundaries

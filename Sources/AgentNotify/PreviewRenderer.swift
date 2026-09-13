@@ -39,6 +39,9 @@ enum PreviewRenderer {
                 try capture(window, output.appendingPathComponent("\(theme)-completion.png"), width: 440, height: 610)
                 model.undo()
             }
+            model.completeVisible()
+            try capture(window, output.appendingPathComponent("\(theme)-bulk-completion.png"), width: 360, height: 500)
+            model.undo()
         }
         window.close()
         let preferences = PreferencesModel()

@@ -122,18 +122,23 @@ struct InboxView: View {
                     .onChange(of: model.selected) { _, id in if let id { proxy.scrollTo(id, anchor: .center) } }
                 }
             }
-            if let undoItem = model.undoItem {
-                let title = model.items.first(where: { $0.id == undoItem.id })?.title ?? "Notification"
+            if let completion = model.undoCompletion {
+                let title = model.items.first(where: { $0.id == completion.items.first?.id })?.title ?? "Notification"
                 HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Completed").font(.system(size: 11)).foregroundStyle(.secondary)
-                        Text(title.isEmpty ? "Notification" : title).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                    if completion.isBulk {
+                        Text("Completed \(completion.items.count) notifications")
+                            .font(.system(size: 12, weight: .medium))
+                    } else {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Completed").font(.system(size: 11)).foregroundStyle(.secondary)
+                            Text(title.isEmpty ? "Notification" : title).font(.system(size: 12, weight: .medium)).lineLimit(1).truncationMode(.middle)
+                        }
                     }
                     Spacer()
-                    Button("Undo completion") { model.undo() }.buttonStyle(QuietButtonStyle())
-                        .help("Return this notification to your inbox")
-                        .accessibilityLabel("Undo completion of \(title)")
-                    IconButton(symbol: "xmark", label: "Hide confirmation") { model.undoItem = nil }
+                    Button(completion.isBulk ? "Undo" : "Undo completion") { model.undo() }.buttonStyle(QuietButtonStyle())
+                        .help("Return completed notifications to your inbox")
+                        .accessibilityLabel(completion.isBulk ? "Undo completion of \(completion.items.count) notifications" : "Undo completion of \(title)")
+                    IconButton(symbol: "xmark", label: "Hide confirmation") { model.undoCompletion = nil }
                 }.font(.system(size: 11)).padding(.leading, 20).padding(.trailing, 10).padding(.vertical, 10)
                     .background(Color.primary.opacity(0.035))
             }
@@ -197,12 +202,12 @@ struct InboxView: View {
                 }
                 if model.group != nil || model.period != "any" { Button("Clear Filters") { model.group = nil; model.period = "any" } }
             }.help("Filter by Group or Time").accessibilityLabel("Filter by Group or Time")
+            IconButton(symbol: "checkmark.square", label: "Complete \(model.completableVisible.count) visible notifications") { model.completeVisible() }
+                .disabled(model.completableVisible.isEmpty)
             IconButton(symbol: model.detached ? "pin.fill" : "pin", label: model.detached ? "Unpin Inbox" : "Pin Inbox") { model.onDetach?() }
             IconMenu(symbol: "ellipsis", size: 28) {
                 Button("Mark All Read") { model.markAllRead() }
                     .disabled(!model.visible.contains { $0.readAt == nil })
-                Button("Complete All…") { model.confirmingCompleteAll = true }
-                    .disabled(model.inboxCount == 0)
                 Divider()
                 Button("Close Inbox") { model.onClose?() }
                 Button("Preferences…") { model.onPreferences?() }.disabled(model.onPreferences == nil)
