@@ -1,3 +1,5 @@
+> *Slop Made With Sweat: Made with a lot of love by someone who loves code but read none of it.*
+
 # AgentNotify
 
 A native macOS menu bar inbox. Notifications are durable tasks: read them, act on them, complete them, or come back later. System light and dark appearance, a monochrome interface, and one panel that can detach from the menu bar.
