@@ -202,7 +202,7 @@ struct InboxView: View {
                 }
                 if model.group != nil || model.period != "any" { Button("Clear Filters") { model.group = nil; model.period = "any" } }
             }.help("Filter by Group or Time").accessibilityLabel("Filter by Group or Time")
-            IconButton(symbol: "checkmark.square", label: "Complete \(model.completableVisible.count) visible notifications") { model.completeVisible() }
+            IconButton(symbol: "checkmark", label: "Complete \(model.completableVisible.count) visible notifications") { model.completeVisible() }
                 .disabled(model.completableVisible.isEmpty)
             IconButton(symbol: model.detached ? "pin.fill" : "pin", label: model.detached ? "Unpin Inbox" : "Pin Inbox") { model.onDetach?() }
             IconMenu(symbol: "ellipsis", size: 28) {
