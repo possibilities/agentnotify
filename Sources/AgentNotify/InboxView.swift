@@ -259,12 +259,16 @@ struct NotificationRow: View {
                                 Text(item.title.isEmpty ? "Notification" : item.title).font(.system(size: 13, weight: .semibold)).lineLimit(expanded ? nil : 2).multilineTextAlignment(.leading)
                                 if item.readAt == nil && item.isInbox { Circle().fill(Color.primary).frame(width: 4, height: 4).accessibilityLabel("Unread") }
                                 Spacer(minLength: 2)
-                                Text(Date(timeIntervalSince1970: item.createdAt), format: .relative(presentation: .numeric, unitsStyle: .abbreviated)).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).fixedSize().help(Date(timeIntervalSince1970: item.createdAt).formatted(date: .complete, time: .shortened))
+                                TimelineView(.periodic(from: .now, by: 60)) { context in
+                                    Text(NotificationTimestamp.relative(createdAt: item.createdAt, now: context.date))
+                                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+                                }
+                                .help("Created \(NotificationTimestamp.exact(createdAt: item.createdAt))")
                             }
                             if !item.subtitle.isEmpty { Text(item.subtitle).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary).lineLimit(expanded ? nil : 1) }
                             Text(item.message).font(.system(size: 13)).foregroundStyle(.primary.opacity(0.85)).lineSpacing(3).lineLimit(expanded ? nil : 3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
                         }.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                    }.buttonStyle(.plain).accessibilityLabel("\(item.title). \(item.message). \(expanded ? "Collapse" : "Show Details")")
+                    }.buttonStyle(.plain).accessibilityLabel("\(item.title). \(item.message). Created \(NotificationTimestamp.exact(createdAt: item.createdAt)). \(expanded ? "Collapse" : "Show Details")")
                     HStack(spacing: 8) {
                         if !item.group.isEmpty { Button(item.group) { model.group = item.group }.buttonStyle(.plain).lineLimit(1).help("Show Group: \(item.group)") }
                         if ["scheduled", "snoozed"].contains(item.status), let due = item.snoozedUntil ?? item.scheduledAt {

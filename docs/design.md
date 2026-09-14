@@ -6,7 +6,7 @@ The person opens this panel to decide what still needs attention and take the ne
 
 A continuous semantic window surface, SF system typography, and grayscale controls. System appearance selects light and dark automatically. A functional category menu, count, search, filters, and a detach control occupy the top. The category’s custom chevron has an explicit 8-point gap; the count stays outside the menu label so AppKit does not compress the composition. Notification rows share a title/body/metadata/action alignment without enclosing cards. The selected row gets a subtle surface; every other boundary must earn its space.
 
-Type roles: 20-point semibold category, 13-point semibold titles, 13-point regular body, 11-point metadata. Outer inset 20 points, row inset 10, restrained 6-point control radii, 28-point icon targets. Default inbox 440 × 610; the panel supports 360–700-point widths. Use semantic colors, never fixed light/dark overrides in production. Relative dates omit ticking seconds.
+Type roles: 20-point semibold category, 13-point semibold titles, 13-point regular body, 11-point metadata. Outer inset 20 points, row inset 10, restrained 6-point control radii, 28-point icon targets. Default inbox 440 × 610; the panel supports 360–700-point widths. Use semantic colors, never fixed light/dark overrides in production. Relative creation dates use an explicit current-time reference refreshed every minute, with “now” for the first minute instead of ticking seconds. Hover and the row’s accessible label expose the full creation date, seconds, and time zone; read, completion, and delivery updates do not reset creation time.
 
 ## Behavior
 
