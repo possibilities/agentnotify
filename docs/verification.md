@@ -31,12 +31,17 @@ September 10 final results before the clean-checkout installer pass:
 - A debug native-panel self-check failed against the prior confirmation flow and passed after the change. It checks centered placement on the chosen and a negative-coordinate display, pointer-free pin/unpin continuity, immediate whole-Inbox shortcut completion, dismissal, and Undo after reopening. `check-feedback`, `check-arrivals`, `check-shortcut`, and `check-hover` passed against disposable fixtures.
 - `scripts/build.sh`: passed release packaging and strict signature verification. Physical multi-display and installed-app behavior remain to be qualified after delivery.
 
+## Focused Escape dismissal
+
+- The isolated native-panel check failed against the prior search-first Escape behavior. It now verifies that bare Escape closes a focused unpinned inbox despite search and selection, and does not dismiss a pinned panel.
+
 ## Acceptance criteria
 
 - AgentNotify's sticky preview is the sole arrival presentation. Sends are recorded as `accepted` with `nativeRegistered: false`; the app does not request notification authorization or create macOS banners, notification sounds, categories, or Notification Center entries. Launch cleanup withdraws projections left by earlier AgentNotify builds without requesting permission.
 - Arrivals reuse one panel, show the latest item, and remain until explicitly dismissed, opened, or completed. The footer distinguishes unread notifications from read items that still need attention.
 - The preview's Complete activator performs the durable `status done` transition for the displayed identity. Completing an unanswered prompt records close before effects and runs no callback. A successful completion advances within the current burst or dismisses after its final item; failure leaves the item visible.
 - The header checkmark immediately completes visible active notifications and offers one exact-batch Undo. The top-centered arrival and eye-level inbox fit their chosen display, including negative-coordinate screens. The inbox has no pointer in either pin state. The global shortcut completes the whole active Inbox immediately without a confirmation sheet and dismisses the inbox; reopening within 60 seconds exposes the exact Undo batch. Preferences can replace or clear the default `⌥⇧⌘D` shortcut, and recording requires at least two modifiers.
+- Bare Escape dismisses the focused unpinned inbox without changing notifications; a pinned panel stays open.
 - Mark All Read remains distinct from completion. The durable `completeAll` API is atomic, leaves scheduled and snoozed notifications alone, and closes unanswered prompts without running actions or body callbacks.
 - CLI, Unix socket, and MCP remain peers. Terminal-notifier-compatible noninteractive sends succeed on durable acceptance, and legacy `-list ALL`/`-list PENDING` report durable AgentNotify projections rather than UserNotifications state.
 

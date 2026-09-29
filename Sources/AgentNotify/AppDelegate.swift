@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import Combine
 import SwiftUI
 import NotifyCore
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     private var inboxSize = NSSize(width: 440, height: 610)
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
+    private var escapeMonitor: Any?
     private var selectionGeneration = 0
     private var statusMouseMonitor: Any?
     private var statusReleaseMonitor: Any?
@@ -302,6 +304,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         stopDismissal()
         guard !model.detached, let panel else { return }
         hoverDismissal.start(window: panel, statusButton: statusItem.button)
+        escapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self, weak panel] event in
+            guard let self, let panel, event.window === panel, panel.isKeyWindow,
+                  panel.attachedSheet == nil, event.keyCode == UInt16(kVK_Escape),
+                  event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty else { return event }
+            self.closeSurface()
+            return nil
+        }
         let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         // A different app's menu extra may not activate its application or
         // take key status. Its mouse-down is still an immediate outside click.
@@ -323,7 +332,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         hoverDismissal.stop()
         if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
         if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
-        outsideClickMonitor = nil; localClickMonitor = nil
+        if let escapeMonitor { NSEvent.removeMonitor(escapeMonitor) }
+        outsideClickMonitor = nil; localClickMonitor = nil; escapeMonitor = nil
     }
     private func dismissForOutsideClick() {
         guard inboxIsVisible, !model.detached, panel?.attachedSheet == nil else { return }
@@ -485,6 +495,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             show()
             closeSurface()
             show()
+            model.searchVisible = true
+            model.query = "Sparse inbox"
+            model.selected = model.items.first?.id
+            panel.makeKey()
+            guard let escape = NSEvent.keyEvent(with: .keyDown, location: .zero,
+                    modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber,
+                    context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+                    isARepeat: false, keyCode: UInt16(kVK_Escape)) else {
+                throw NotifyError("internal_error", "Could not create Escape event.")
+            }
+            NSApp.sendEvent(escape)
+            try require(!inboxIsVisible && model.searchVisible && model.selected != nil,
+                        "Escape did not dismiss the focused unpinned inbox before clearing search or selection.")
+            model.searchVisible = false; model.query = ""; model.selected = nil
+            show()
+            toggleDetached()
+            panel.makeKey()
+            NSApp.sendEvent(escape)
+            try require(inboxIsVisible && model.detached, "Escape dismissed a pinned inbox.")
+            toggleDetached()
+            closeSurface()
+            show()
             let shortcutCount = model.inboxCount
             completeAllShortcut.action?()
             try require(shortcutCount > 0 && !inboxIsVisible && model.inboxCount == 0
@@ -504,7 +536,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
                         "checks": ["native status selection", "centered arrival and eye-level inbox geometry", "nonactivating panel", "four stationary pin/unpin cycles",
                                    "pinned focus-loss and outside-click persistence", "stable open geometry",
                                    "drag and unpin preserve position", "outside-click dismissal", "key-loss dismissal",
-                                    "stale selection cannot outlive the inbox", "shortcut completes and closes with Undo on reopening"],
+                                    "stale selection cannot outlive the inbox", "Escape dismisses the focused unpinned inbox but not a pinned panel",
+                                    "shortcut completes and closes with Undo on reopening"],
                         "dragChecks": dragChecks
                     ]
                     try JSON.data(result).write(to: directory.appendingPathComponent("native-panel-check.json"))

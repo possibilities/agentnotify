@@ -138,7 +138,11 @@ struct InboxView: View {
         .clipShape(RoundedRectangle(cornerRadius: model.presentedAsPanel ? InboxPanel.cornerRadius : 0, style: .continuous))
         .tint(.primary)
         .ignoresSafeArea(.container, edges: .top)
-        .onExitCommand { if model.searchVisible { model.query = ""; model.searchVisible = false } else if model.selected != nil { model.selected = nil } else { model.onClose?() } }
+        .onExitCommand {
+            if !model.detached { model.onClose?() }
+            else if model.searchVisible { model.query = ""; model.searchVisible = false }
+            else if model.selected != nil { model.selected = nil }
+        }
     }
     private var controls: some View {
         HStack(alignment: .center, spacing: 6) {
