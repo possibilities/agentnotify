@@ -48,13 +48,17 @@ public struct AppPreferences: Codable, Equatable {
     public static let defaultCompleteAllShortcut = GlobalShortcut(
         keyCode: 2, key: "D", modifiers: ["option", "shift", "command"]
     )
+    public static let defaultShowInboxShortcut = GlobalShortcut(
+        keyCode: 34, key: "I", modifiers: ["option", "shift", "command"]
+    )
     public var arrivalStyle: ArrivalStyle = .queuePeek
     public var showBannerReminder: Bool = false
     public var completeAllShortcut: GlobalShortcut? = Self.defaultCompleteAllShortcut
+    public var showInboxShortcut: GlobalShortcut? = Self.defaultShowInboxShortcut
     public var revision: Int = 1
 
     public init() {}
-    private enum CodingKeys: String, CodingKey { case arrivalStyle, showBannerReminder, completeAllShortcut, revision }
+    private enum CodingKeys: String, CodingKey { case arrivalStyle, showBannerReminder, completeAllShortcut, showInboxShortcut, revision }
     public init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         arrivalStyle = try values.decodeIfPresent(ArrivalStyle.self, forKey: .arrivalStyle) ?? .queuePeek
@@ -63,6 +67,14 @@ public struct AppPreferences: Codable, Equatable {
             do { completeAllShortcut = try values.decodeIfPresent(GlobalShortcut.self, forKey: .completeAllShortcut) }
             catch { completeAllShortcut = nil }
         } else { completeAllShortcut = Self.defaultCompleteAllShortcut }
+        if values.contains(.showInboxShortcut) {
+            do { showInboxShortcut = try values.decodeIfPresent(GlobalShortcut.self, forKey: .showInboxShortcut) }
+            catch { showInboxShortcut = nil }
+        } else {
+            let proposed = Self.defaultShowInboxShortcut
+            showInboxShortcut = completeAllShortcut?.keyCode == proposed.keyCode
+                && completeAllShortcut?.modifiers == proposed.modifiers ? nil : proposed
+        }
         revision = try values.decodeIfPresent(Int.self, forKey: .revision) ?? 1
     }
 
@@ -72,6 +84,8 @@ public struct AppPreferences: Codable, Equatable {
         try values.encode(showBannerReminder, forKey: .showBannerReminder)
         if let completeAllShortcut { try values.encode(completeAllShortcut, forKey: .completeAllShortcut) }
         else { try values.encodeNil(forKey: .completeAllShortcut) }
+        if let showInboxShortcut { try values.encode(showInboxShortcut, forKey: .showInboxShortcut) }
+        else { try values.encodeNil(forKey: .showInboxShortcut) }
         try values.encode(revision, forKey: .revision)
     }
 }

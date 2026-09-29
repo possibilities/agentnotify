@@ -9,20 +9,33 @@ final class PreferencesChecks: StoreTestsBase {
             "revision": 8,
         ])
         expectEqual(legacy.completeAllShortcut, AppPreferences.defaultCompleteAllShortcut)
+        expectEqual(legacy.showInboxShortcut, AppPreferences.defaultShowInboxShortcut)
+        let legacyCollision = try JSON.decode(AppPreferences.self, [
+            "completeAllShortcut": ["keyCode": 34, "key": "I", "modifiers": ["option", "shift", "command"]],
+        ])
+        expectNil(legacyCollision.showInboxShortcut)
         let explicitlyCleared = try JSON.decode(AppPreferences.self, [
             "completeAllShortcut": NSNull(),
             "revision": 3,
         ])
         expectNil(explicitlyCleared.completeAllShortcut)
+        let clearedShow = try JSON.decode(AppPreferences.self, ["showInboxShortcut": NSNull()])
+        expectNil(clearedShow.showInboxShortcut)
         let malformedStored = try JSON.decode(AppPreferences.self, [
             "completeAllShortcut": ["keyCode": -1, "key": "D", "modifiers": ["command", "option"]],
             "revision": 4,
         ])
         expectNil(malformedStored.completeAllShortcut)
+        let malformedShow = try JSON.decode(AppPreferences.self, [
+            "showInboxShortcut": ["keyCode": 200, "key": "I", "modifiers": ["option", "command"]],
+        ])
+        expectNil(malformedShow.showInboxShortcut)
 
         let initial = try store.perform("preferences", params: [:])
         expectEqual(try JSON.decode(AppPreferences.self, initial).completeAllShortcut,
             AppPreferences.defaultCompleteAllShortcut)
+        expectEqual(try JSON.decode(AppPreferences.self, initial).showInboxShortcut,
+            AppPreferences.defaultShowInboxShortcut)
         let supplied: [String: Any] = [
             "keyCode": 53,
             "key": "⎋",
@@ -36,6 +49,11 @@ final class PreferencesChecks: StoreTestsBase {
         expectEqual((assigned["completeAllShortcut"] as? [String: Any])?["keyCode"] as? Int, 53)
         expectEqual((assigned["completeAllShortcut"] as? [String: Any])?["key"] as? String, "⎋")
         expectEqual((assigned["completeAllShortcut"] as? [String: Any])?["modifiers"] as? [String], ["control", "command"])
+        expectThrows(try store.perform("setPreferences", params: [
+            "showInboxShortcut": ["keyCode": 53, "key": "Escape", "modifiers": ["command", "control"]],
+            "expectedRevision": 2,
+        ]))
+        expectEqual(try store.preferences().revision, 2)
 
         store = try Store(paths: NotifyPaths(root: root))
         expectEqual(try store.preferences().completeAllShortcut, GlobalShortcut(
@@ -51,8 +69,15 @@ final class PreferencesChecks: StoreTestsBase {
         expectEqual(cleared["revision"] as? Int, 3)
         expectTrue(cleared["completeAllShortcut"] is NSNull)
         expectNil(try store.preferences().completeAllShortcut)
-        let stillClear = try store.perform("setPreferences", params: ["completeAllShortcut": NSNull(), "expectedRevision": 3])
-        expectEqual(stillClear["revision"] as? Int, 3)
+        let show: [String: Any] = ["keyCode": 1, "key": "S", "modifiers": ["option", "command"]]
+        let assignedShow = try store.perform("setPreferences", params: ["showInboxShortcut": show, "expectedRevision": 3])
+        expectEqual(assignedShow["revision"] as? Int, 4)
+        store = try Store(paths: NotifyPaths(root: root))
+        expectEqual(try store.preferences().showInboxShortcut, GlobalShortcut(keyCode: 1, key: "S", modifiers: ["option", "command"]))
+        let clearedShowPreference = try store.perform("setPreferences", params: ["showInboxShortcut": NSNull(), "expectedRevision": 4])
+        expectTrue(clearedShowPreference["showInboxShortcut"] is NSNull)
+        let stillClear = try store.perform("setPreferences", params: ["completeAllShortcut": NSNull(), "expectedRevision": 5])
+        expectEqual(stillClear["revision"] as? Int, 5)
 
         let invalid: [Any] = [
             "not-an-object",
@@ -71,9 +96,11 @@ final class PreferencesChecks: StoreTestsBase {
         ]
         for value in invalid {
             expectThrows(try store.perform("setPreferences", params: ["completeAllShortcut": value]))
+            expectThrows(try store.perform("setPreferences", params: ["showInboxShortcut": value]))
         }
-        expectEqual(try store.preferences().revision, 3)
+        expectEqual(try store.preferences().revision, 5)
         expectNil(try store.preferences().completeAllShortcut)
+        expectNil(try store.preferences().showInboxShortcut)
     }
 
     func bannerReminderMigrationAndIndependentUpdates() throws {

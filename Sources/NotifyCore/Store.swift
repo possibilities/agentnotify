@@ -134,6 +134,18 @@ public final class Store {
                         key: shortcut["key"] as! String, modifiers: shortcut["modifiers"] as! [String])
                 }
             }
+            if let value = p["showInboxShortcut"] {
+                if value is NSNull { current.showInboxShortcut = nil }
+                else {
+                    let shortcut = value as! [String: Any]
+                    current.showInboxShortcut = GlobalShortcut(keyCode: (shortcut["keyCode"] as! NSNumber).intValue,
+                        key: shortcut["key"] as! String, modifiers: shortcut["modifiers"] as! [String])
+                }
+            }
+            if let complete = current.completeAllShortcut, let show = current.showInboxShortcut,
+               complete.keyCode == show.keyCode && complete.modifiers == show.modifiers {
+                throw NotifyError("invalid_argument", "Show Inbox and Complete All cannot use the same key combination.")
+            }
             if current != previous {
                 current.revision += 1
                 try db.run("INSERT INTO preferences(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json", [JSON.string(try JSON.encode(current))])

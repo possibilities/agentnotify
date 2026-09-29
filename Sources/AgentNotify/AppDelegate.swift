@@ -33,7 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     private var statusReleaseMonitor: Any?
     private var statusPressInFlight = false
     private let arrivals = ArrivalPresentation()
-    private let completeAllShortcut = GlobalShortcutController()
+    private let completeAllShortcut = GlobalShortcutController(id: 1)
+    private let showInboxShortcut = GlobalShortcutController(id: 2)
     private var arrivalTracker: ArrivalTracker?
     private var pendingArrivalIDs: [String] = []
     private let interfaceInstanceID = UUID().uuidString.lowercased()
@@ -72,8 +73,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             interfaceObservation = model.objectWillChange.sink { [weak self] in self?.bumpInterfaceRevision() }
             preferencesModel.service = service
             completeAllShortcut.action = { [weak self] in self?.completeAllFromShortcut() }
+            showInboxShortcut.action = { [weak self] in self?.show() }
             preferencesModel.onApplyShortcut = { [weak self] shortcut in self?.completeAllShortcut.apply(shortcut) }
             preferencesModel.activeShortcut = { [weak self] in self?.completeAllShortcut.current }
+            preferencesModel.onApplyShowShortcut = { [weak self] shortcut in self?.showInboxShortcut.apply(shortcut) }
+            preferencesModel.activeShowShortcut = { [weak self] in self?.showInboxShortcut.current }
             preferencesModel.onChange = { [weak self] preferences in
                 self?.arrivals.style = preferences.arrivalStyle
             }
@@ -266,9 +270,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         if let window = preferencesWindow?.window { offerShimSetup(in: window) }
     }
     private func completeAllFromShortcut() {
+        guard inboxIsVisible || arrivals.isVisible else { return }
         model.refresh()
         guard model.inboxCount > 0 else { return }
-        if model.completeAll() { closeSurface() }
+        if model.completeAll() {
+            arrivals.dismiss()
+            if inboxIsVisible { closeSurface() }
+        }
     }
     private func offerShimSetup(in window: NSWindow) {
         #if DEBUG
@@ -528,6 +536,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             model.undo()
             try require(model.inboxCount == shortcutCount, "Shortcut completion could not be undone after reopening.")
             closeSurface()
+            let hiddenCursor = try service.store.cursor()
+            completeAllShortcut.action?()
+            try require(try service.store.cursor() == hiddenCursor && model.inboxCount == shortcutCount,
+                        "Complete All changed the Inbox while both native surfaces were hidden.")
+            showInboxShortcut.action?()
+            try require(inboxIsVisible && (try service.store.cursor()) == hiddenCursor,
+                        "Global Show Inbox did not open the inbox without changing durable state.")
+            closeSurface()
+            guard let arrivalItem = model.items.first(where: \.isInbox) else {
+                throw NotifyError("internal_error", "No active item for arrival shortcut check.")
+            }
+            arrivals.receive([arrivalItem], items: model.items)
+            try require(arrivals.isVisible && !inboxIsVisible, "Arrival shortcut check did not present the preview.")
+            completeAllShortcut.action?()
+            try require(!arrivals.isVisible && !inboxIsVisible && model.inboxCount == 0,
+                        "Complete All did not clear and dismiss the visible arrival.")
+            model.undo()
             DispatchQueue.main.async {
                 do {
                     try require(self.statusItem.button?.isHighlighted == false, "Stale opening restored selection after closing.")
@@ -537,7 +562,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
                                    "pinned focus-loss and outside-click persistence", "stable open geometry",
                                    "drag and unpin preserve position", "outside-click dismissal", "key-loss dismissal",
                                     "stale selection cannot outlive the inbox", "Escape dismisses the focused unpinned inbox but not a pinned panel",
-                                    "shortcut completes and closes with Undo on reopening"],
+                                    "shortcut completes and closes with Undo on reopening",
+                                    "hidden shortcut is inert, Show Inbox opens without reading, visible arrival allows completion"],
                         "dragChecks": dragChecks
                     ]
                     try JSON.data(result).write(to: directory.appendingPathComponent("native-panel-check.json"))

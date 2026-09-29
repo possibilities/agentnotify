@@ -10,6 +10,7 @@ final class PreferencesModel: ObservableObject {
     @Published private(set) var originalNotifier: String?
     @Published private(set) var installingShim = false
     @Published var shortcutError: String?
+    @Published var showShortcutError: String?
     let preview = ArrivalViewModel(content: ArrivalContent(
         id: "preferences-sample", title: "Build finished", subtitle: "AgentNotify",
         message: "All checks passed. The next step is ready when you are.",
@@ -19,6 +20,8 @@ final class PreferencesModel: ObservableObject {
     var onChange: ((AppPreferences) -> Void)?
     var onApplyShortcut: ((GlobalShortcut?) -> String?)?
     var activeShortcut: (() -> GlobalShortcut?)?
+    var onApplyShowShortcut: ((GlobalShortcut?) -> String?)?
+    var activeShowShortcut: (() -> GlobalShortcut?)?
 
     func refresh() {
         do {
@@ -38,6 +41,20 @@ final class PreferencesModel: ObservableObject {
                     ]))
                 }
             } else { shortcutError = nil }
+            if let registrationError = onApplyShowShortcut?(value.showInboxShortcut) {
+                showShortcutError = registrationError
+                let active = activeShowShortcut?()
+                if active != value.showInboxShortcut {
+                    let encoded: Any = active.map {
+                        ["keyCode": $0.keyCode, "key": $0.key, "modifiers": $0.modifiers]
+                    } ?? NSNull()
+                    value = try JSON.decode(AppPreferences.self, service.store.perform("setPreferences", params: [
+                        "showInboxShortcut": encoded,
+                        "expectedRevision": value.revision,
+                        "requestId": UUID().uuidString,
+                    ]))
+                }
+            } else { showShortcutError = nil }
             current = value
             preview.style = value.arrivalStyle
             let shim = try service.call("shimStatus")
@@ -100,6 +117,15 @@ final class PreferencesModel: ObservableObject {
         update(["completeAllShortcut": value])
     }
 
+    func setShowInboxShortcut(_ shortcut: GlobalShortcut?) {
+        if let error = onApplyShowShortcut?(shortcut) {
+            showShortcutError = error
+            return
+        }
+        let value: Any = shortcut.map { ["keyCode": $0.keyCode, "key": $0.key, "modifiers": $0.modifiers] } ?? NSNull()
+        update(["showInboxShortcut": value])
+    }
+
     private func update(_ changes: [String: Any]) {
         guard let service else { return }
         do {
@@ -150,7 +176,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
 
 struct PreferencesView: View {
     @ObservedObject var model: PreferencesModel
-    @State private var recordingShortcut = false
+    @State private var recordingCompleteAll = false
+    @State private var recordingShowInbox = false
 
     var body: some View {
         ScrollView {
@@ -158,7 +185,7 @@ struct PreferencesView: View {
             Text("Appearance").font(.system(size: 18, weight: .semibold))
             arrivalAppearance
             Divider().opacity(0.5)
-            completeAllShortcut
+            keyboardShortcuts
             Divider().opacity(0.5)
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -190,38 +217,56 @@ struct PreferencesView: View {
         .tint(.primary)
     }
 
-    private var completeAllShortcut: some View {
-        VStack(alignment: .leading, spacing: 8) {
+    private var keyboardShortcuts: some View {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Keyboard").font(.system(size: 13, weight: .semibold))
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Complete All").font(.system(size: 12, weight: .medium))
-                    Text("Works from any app and opens the count-aware confirmation.")
+                    Text("Show Inbox").font(.system(size: 12, weight: .medium))
+                    Text("Open the inbox from any app without reading notifications.")
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 12)
-                Button(recordingShortcut ? "Press shortcut…" : (model.current.completeAllShortcut?.displayName ?? "Record Shortcut")) {
-                    recordingShortcut.toggle()
+                Button(recordingShowInbox ? "Press shortcut…" : (model.current.showInboxShortcut?.displayName ?? "Record Shortcut")) {
+                    recordingCompleteAll = false
+                    recordingShowInbox.toggle()
                 }
-                if model.current.completeAllShortcut != nil {
-                    Button("Clear") { recordingShortcut = false; model.setCompleteAllShortcut(nil) }
+                if model.current.showInboxShortcut != nil {
+                    Button("Clear") { recordingShowInbox = false; model.setShowInboxShortcut(nil) }
                 }
             }
-            Text(shortcutHelp)
+            if let error = model.showShortcutError {
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            ShortcutCaptureView(recording: $recordingShowInbox, captured: model.setShowInboxShortcut)
+                .frame(width: 0, height: 0)
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Complete All").font(.system(size: 12, weight: .medium))
+                    Text("Only while an arrival or inbox is visible; completes the Inbox and closes it.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Button(recordingCompleteAll ? "Press shortcut…" : (model.current.completeAllShortcut?.displayName ?? "Record Shortcut")) {
+                    recordingShowInbox = false
+                    recordingCompleteAll.toggle()
+                }
+                if model.current.completeAllShortcut != nil {
+                    Button("Clear") { recordingCompleteAll = false; model.setCompleteAllShortcut(nil) }
+                }
+            }
+            Text(recordingShowInbox || recordingCompleteAll
+                 ? "Press a key with at least two of ⌃⌥⇧⌘. Bare Escape cancels; bare Delete clears."
+                 : "Use Clear to remove a shortcut. New installs default to ⌥⇧⌘I for Show Inbox and ⌥⇧⌘D for Complete All.")
                 .font(.system(size: 11)).foregroundStyle(.secondary)
             if let error = model.shortcutError {
                 Label(error, systemImage: "exclamationmark.circle")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
-            ShortcutCaptureView(recording: $recordingShortcut, captured: model.setCompleteAllShortcut)
+            ShortcutCaptureView(recording: $recordingCompleteAll, captured: model.setCompleteAllShortcut)
                 .frame(width: 0, height: 0)
         }
-    }
-
-    private var shortcutHelp: String {
-        if recordingShortcut { return "Press a key with at least two of ⌃⌥⇧⌘. Bare Escape cancels; bare Delete clears." }
-        if model.current.completeAllShortcut != nil { return "Use Clear to remove this shortcut." }
-        return "No shortcut assigned. New installs default to ⌥⇧⌘D."
     }
 
     private var arrivalAppearance: some View {

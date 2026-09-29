@@ -3,15 +3,21 @@ import Carbon.HIToolbox
 import SwiftUI
 import NotifyCore
 
-private let completeAllHotKeySignature: OSType = 0x414E4341 // ANCA
+private let hotKeySignature: OSType = 0x414E484B // ANHK
 
-private func completeAllHotKeyHandler(
+private func globalHotKeyHandler(
     _ nextHandler: EventHandlerCallRef?,
     _ event: EventRef?,
     _ userData: UnsafeMutableRawPointer?
 ) -> OSStatus {
-    guard let userData else { return OSStatus(eventNotHandledErr) }
+    guard let userData, let event else { return OSStatus(eventNotHandledErr) }
     let controller = Unmanaged<GlobalShortcutController>.fromOpaque(userData).takeUnretainedValue()
+    var identifier = EventHotKeyID(signature: 0, id: 0)
+    guard GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                            nil, MemoryLayout<EventHotKeyID>.size, nil, &identifier) == noErr,
+          identifier.signature == controller.identifier.signature, identifier.id == controller.identifier.id else {
+        return OSStatus(eventNotHandledErr)
+    }
     controller.invoke()
     return noErr
 }
@@ -20,14 +26,16 @@ private func completeAllHotKeyHandler(
 /// permission. A failed replacement restores the previously working shortcut.
 final class GlobalShortcutController {
     var action: (() -> Void)?
+    let identifier: EventHotKeyID
     private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
     private var eventHandlerStatus: OSStatus = noErr
     private(set) var current: GlobalShortcut?
 
-    init() {
+    init(id: UInt32) {
+        identifier = EventHotKeyID(signature: hotKeySignature, id: id)
         var type = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        eventHandlerStatus = InstallEventHandler(GetApplicationEventTarget(), completeAllHotKeyHandler, 1, &type,
+        eventHandlerStatus = InstallEventHandler(GetApplicationEventTarget(), globalHotKeyHandler, 1, &type,
             Unmanaged.passUnretained(self).toOpaque(), &eventHandler)
     }
 
@@ -56,7 +64,6 @@ final class GlobalShortcutController {
     }
 
     private func register(_ shortcut: GlobalShortcut) -> OSStatus {
-        let identifier = EventHotKeyID(signature: completeAllHotKeySignature, id: 1)
         return RegisterEventHotKey(UInt32(shortcut.keyCode), shortcut.carbonModifiers, identifier,
             GetApplicationEventTarget(), 0, &hotKey)
     }

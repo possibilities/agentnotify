@@ -180,7 +180,8 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         preference_cursor = ok('diagnose')['cursor']
         initial_preferences = ok('preferences')
         default_shortcut = {'keyCode': 2, 'key': 'D', 'modifiers': ['option', 'shift', 'command']}
-        check(initial_preferences == {'arrivalStyle': 'queue-peek', 'showBannerReminder': False, 'completeAllShortcut': default_shortcut, 'revision': 1}, 'default preferences')
+        default_show = {'keyCode': 34, 'key': 'I', 'modifiers': ['option', 'shift', 'command']}
+        check(initial_preferences == {'arrivalStyle': 'queue-peek', 'showBannerReminder': False, 'completeAllShortcut': default_shortcut, 'showInboxShortcut': default_show, 'revision': 1}, 'default preferences')
         selected = cli('setPreferences', '--arrivalStyle', 'compact-toast', '--expectedRevision', '1', '--requestId', 'pref-cli')
         check(selected.returncode == 0 and json.loads(selected.stdout)['data']['arrivalStyle'] == 'compact-toast', 'CLI preference write')
         read_preferences = mcp_call(7, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
@@ -219,18 +220,25 @@ with tempfile.TemporaryDirectory(prefix='an-', dir='/tmp') as tmp:
         reminder = cli('setPreferences', '--showBannerReminder', 'true', '--expectedRevision', '5')
         check(reminder.returncode == 0 and json.loads(reminder.stdout)['data']['showBannerReminder'], 'CLI retains deprecated banner field for compatibility')
         reminder_read = mcp_call(11, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']
-        check(reminder_read == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': True, 'completeAllShortcut': None, 'revision': 6}, 'MCP observes deprecated compatibility preference')
-        retired_clear = cli('setPreferences', '--showBannerReminder', 'false', '--expectedRevision', '6')
+        check(reminder_read == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': True, 'completeAllShortcut': None, 'showInboxShortcut': default_show, 'revision': 6}, 'MCP observes deprecated compatibility preference')
+        show_shortcut = {'keyCode': 1, 'key': 'S', 'modifiers': ['option', 'command']}
+        show_write = cli('setPreferences', '--showInboxShortcut', json.dumps(show_shortcut), '--expectedRevision', '6')
+        check(show_write.returncode == 0 and json.loads(show_write.stdout)['data']['showInboxShortcut'] == show_shortcut, 'CLI assigns Show Inbox shortcut')
+        check(mcp_call(23, 'tools/call', {'name': 'preferences'})['result']['structuredContent']['data']['showInboxShortcut'] == show_shortcut, 'MCP observes Show Inbox shortcut')
+        check(api('setPreferences', {'completeAllShortcut': show_shortcut})['error']['code'] == 'invalid_argument', 'both shortcuts cannot use one combination')
+        show_clear = mcp_call(24, 'tools/call', {'name': 'setPreferences', 'arguments': {'showInboxShortcut': None, 'expectedRevision': 7}})['result']
+        check(not show_clear['isError'] and show_clear['structuredContent']['data']['showInboxShortcut'] is None, 'MCP clears Show Inbox shortcut')
+        retired_clear = cli('setPreferences', '--showBannerReminder', 'false', '--expectedRevision', '8')
         check(retired_clear.returncode == 0 and not json.loads(retired_clear.stdout)['data']['showBannerReminder'], 'deprecated field can be restored to its inert default')
         check(cli('setPreferences', '--showBannerReminder', 'invalid').returncode == 2, 'invalid reminder preference rejected')
-        check(api('setPreferences', {'expectedRevision': 7})['error']['code'] == 'invalid_argument', 'empty preference change rejected')
+        check(api('setPreferences', {'expectedRevision': 9})['error']['code'] == 'invalid_argument', 'empty preference change rejected')
         mcp.stdin.close(); mcp.wait(timeout=5)
         # Persisted state and resumable change stream survive a full service restart.
         before = ok('diagnose')
         first = ok('changes', {'after': 0, 'limit': 2})
         check(first['hasMore'] and len(first['changes']) == 2, 'change pagination')
         stop(); start()
-        check(ok('preferences') == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'completeAllShortcut': None, 'revision': 7}, 'preferences survive service restart')
+        check(ok('preferences') == {'arrivalStyle': 'queue-shelf', 'showBannerReminder': False, 'completeAllShortcut': None, 'showInboxShortcut': None, 'revision': 9}, 'preferences survive service restart')
         check(ok('shimStatus')['promptHandled'], 'shim offer choice survives service restart')
         check(ok('diagnose')['total'] == before['total'], 'durable records after restart')
         check(ok('get', {'id': conflict['id']})['readAt'] is not None, 'durable read state')
