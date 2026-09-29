@@ -10,13 +10,11 @@ final class InboxModel: ObservableObject {
     @Published var period = "any"
     @Published var selected: String? = nil
     // Pin state is separate from placement: unpinning a manually moved panel
-    // changes its lifetime without restoring the menu-bar triangle.
+    // changes its lifetime without restoring its default position.
     @Published var detached = false
     @Published var presentedAsPanel = false
-    @Published var pointerX: CGFloat?
     @Published var searchVisible = false
     @Published var arrivalIDs: [String] = []
-    @Published var confirmingCompleteAll = false
     @Published var error: String?
     struct Completion {
         var items: [(id: String, revision: Int)]
@@ -107,10 +105,10 @@ final class InboxModel: ObservableObject {
     }
     var completableVisible: [NotificationRecord] { visible.filter(\.isInbox) }
     func completeVisible() { complete(completableVisible) }
-    // The global shortcut retains its confirmed, whole-Inbox scope.
-    func completeAll() { complete(items.filter(\.isInbox)) }
-    private func complete(_ snapshot: [NotificationRecord]) {
-        guard let service, !snapshot.isEmpty else { return }
+    // The global shortcut always covers the whole Inbox, regardless of filters.
+    @discardableResult func completeAll() -> Bool { complete(items.filter(\.isInbox)) }
+    @discardableResult private func complete(_ snapshot: [NotificationRecord]) -> Bool {
+        guard let service, !snapshot.isEmpty else { return false }
         var completed: [(id: String, revision: Int)] = []
         do {
             // statusBatch's shared contract allows 100 exact references per transaction.
@@ -131,6 +129,7 @@ final class InboxModel: ObservableObject {
             arrivalIDs.removeAll { ids.contains($0) }
         }
         refresh()
+        return !completed.isEmpty
     }
     func undo() {
         guard let service, let completion = undoCompletion else { return }

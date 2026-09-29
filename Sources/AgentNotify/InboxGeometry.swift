@@ -10,14 +10,20 @@ enum InboxGeometry {
         return NSScreen.screens.min { distance($0) < distance($1) }
     }
 
-    // Auto-hide moves the real status-item window above the screen and clears
-    // its `screen`. Project an on-screen anchor for the panel and its pointer,
-    // even when the item is hidden; no positioning window is needed.
-    static func visibleAnchor(_ raw: NSRect, screen: NSRect, topInset: CGFloat) -> NSRect {
-        let top = screen.maxY - topInset
-        let width = min(max(raw.width, 1), screen.width)
-        let y = min(max(raw.minY, screen.minY), top - 1)
-        return NSRect(x: min(max(raw.minX, screen.minX), screen.maxX - width), y: y,
-                      width: width, height: max(1, min(raw.height, top - y)))
+    static func arrivalFrame(size: NSSize, on screen: NSRect) -> NSRect {
+        let width = min(size.width, screen.width - 26)
+        let height = min(size.height, screen.height - 26)
+        return NSRect(x: screen.midX - width / 2, y: screen.maxY - 13 - height,
+                      width: width, height: height)
+    }
+
+    // Center the inbox horizontally and put its center slightly above the
+    // display's midpoint, without letting a tall window escape the safe area.
+    static func inboxFrame(size: NSSize, on screen: NSRect) -> NSRect {
+        let width = min(size.width, screen.width - 26)
+        let height = min(size.height, screen.height - 26)
+        let idealY = screen.midY + screen.height * 0.1 - height / 2
+        let y = max(screen.minY + 13, min(idealY, screen.maxY - 13 - height))
+        return NSRect(x: screen.midX - width / 2, y: y, width: width, height: height)
     }
 }

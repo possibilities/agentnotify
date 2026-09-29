@@ -7,8 +7,6 @@ final class InboxPanel: NSPanel {
     // Match the native popover body's continuous corner, without a titled
     // window's different corner mask and edge highlight.
     static let cornerRadius: CGFloat = 20
-    static let pointerHeight: CGFloat = 12
-    var onDrag: (() -> Void)?
     var onResignKey: (() -> Void)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -25,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     private var server: SocketServer?
     private var service: NotifyService?
     private var focusMonitor: Any?
-    private var inboxSize = NSSize(width: 440, height: 610 + InboxPanel.pointerHeight)
+    private var inboxSize = NSSize(width: 440, height: 610)
     private var outsideClickMonitor: Any?
     private var localClickMonitor: Any?
     private var selectionGeneration = 0
@@ -36,8 +34,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     private let completeAllShortcut = GlobalShortcutController()
     private var arrivalTracker: ArrivalTracker?
     private var pendingArrivalIDs: [String] = []
-    private var arrivalAnchor: NSRect?
-    private var openingAnchor: NSRect?
     private let interfaceInstanceID = UUID().uuidString.lowercased()
     private var interfaceRevision = 1
     private var interfaceObservation: AnyCancellable?
@@ -73,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             service.interfaceController = self
             interfaceObservation = model.objectWillChange.sink { [weak self] in self?.bumpInterfaceRevision() }
             preferencesModel.service = service
-            completeAllShortcut.action = { [weak self] in self?.showCompleteAllConfirmation() }
+            completeAllShortcut.action = { [weak self] in self?.completeAllFromShortcut() }
             preferencesModel.onApplyShortcut = { [weak self] shortcut in self?.completeAllShortcut.apply(shortcut) }
             preferencesModel.activeShortcut = { [weak self] in self?.completeAllShortcut.current }
             preferencesModel.onChange = { [weak self] preferences in
@@ -115,8 +111,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
                 // inbox panel, so the original click finishes on its owner.
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    self.openingAnchor = self.arrivalAnchor
-                    defer { self.openingAnchor = nil }
                     self.model.revealArrival(id)
                     self.show()
                     self.model.markRead(id)
@@ -252,16 +246,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
     }
 
     private func arrivalFrame(_ size: NSSize) -> NSRect? {
-        guard let anchor = menuBarAnchor else { return nil }
-        arrivalAnchor = anchor.rect
-        let size = NSSize(width: arrivals.style == .compactToast ? size.width : inboxSize.width, height: size.height)
-        // Sample the safe menu anchor once per appearance. No auto-hide
-        // tracking: a visible arrival stays still, just like the full inbox.
-        let screen = anchor.screen.visibleFrame
-        // Keep the same screen-edge clearance as the full inbox.
-        let x = max(screen.minX + 13, min(anchor.rect.midX - size.width / 2, screen.maxX - size.width - 13))
-        let top = min(anchor.rect.minY - 13, screen.maxY - 8)
-        return NSRect(x: x, y: max(screen.minY + 8, top - size.height), width: size.width, height: size.height)
+        guard let screen = presentationScreen else { return nil }
+        return InboxGeometry.arrivalFrame(size: size, on: screen.visibleFrame)
     }
     @objc private func toggle() {
         if inboxIsVisible { closeSurface() } else { show() }
@@ -277,11 +263,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         if !wasVisible { bumpInterfaceRevision() }
         if let window = preferencesWindow?.window { offerShimSetup(in: window) }
     }
-    private func showCompleteAllConfirmation() {
+    private func completeAllFromShortcut() {
         model.refresh()
         guard model.inboxCount > 0 else { return }
-        show()
-        model.confirmingCompleteAll = true
+        if model.completeAll() { closeSurface() }
     }
     private func offerShimSetup(in window: NSWindow) {
         #if DEBUG
@@ -300,16 +285,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         guard let panel else { return }
         if !wasVisible && !model.detached {
             if let size = contentScreenFrame?.size { inboxSize = size }
-            guard let anchor = menuBarAnchor else { return }
-            let screen = anchor.screen.visibleFrame
-            let rect = openingAnchor ?? anchor.rect
-            let size = NSSize(width: min(inboxSize.width, screen.width - 26),
-                              height: min(inboxSize.height, screen.height - 26))
-            let x = max(screen.minX + 13, min(rect.midX - size.width / 2, screen.maxX - size.width - 13))
-            let top = min(rect.minY - 1, screen.maxY)
-            model.pointerX = rect.midX - x
-            placePanelContent(at: NSRect(x: x, y: max(screen.minY + 8, top - size.height),
-                                        width: size.width, height: size.height))
+            guard let screen = presentationScreen else { return }
+            placePanelContent(at: InboxGeometry.inboxFrame(size: inboxSize, on: screen.visibleFrame))
         }
         panel.orderFrontRegardless()
         panel.makeKey()
@@ -373,9 +350,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         updateStatusHighlight()
     }
     private func configurePanel() {
-        if let screen = menuBarAnchor?.screen {
+        if let screen = presentationScreen {
             inboxSize.width = min(inboxSize.width, max(360, screen.visibleFrame.width - 32))
-            inboxSize.height = min(inboxSize.height, max(340 + InboxPanel.pointerHeight, screen.visibleFrame.height - 32))
+            inboxSize.height = min(inboxSize.height, max(340, screen.visibleFrame.height - 32))
         }
         model.presentedAsPanel = true
         let panel = InboxPanel(contentRect: NSRect(origin: .zero, size: inboxSize),
@@ -386,13 +363,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         panel.isMovableByWindowBackground = false; panel.isReleasedWhenClosed = false
         panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.minSize = NSSize(width: 360, height: 340 + InboxPanel.pointerHeight)
-        panel.maxSize = NSSize(width: 700, height: 1200 + InboxPanel.pointerHeight)
+        panel.minSize = NSSize(width: 360, height: 340)
+        panel.maxSize = NSSize(width: 700, height: 1200)
         panel.contentViewController = controller
         // Installing the hosting controller can replace the requested frame
         // with its empty-content fitting size. Keep the initial inbox size.
         panel.setContentSize(inboxSize)
-        panel.onDrag = { [weak self] in self?.model.pointerX = nil }
         panel.onResignKey = { [weak self] in self?.panelResignedKey() }
         self.panel = panel
     }
@@ -407,9 +383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
         guard let button = statusItem?.button, let window = button.window else { return nil }
         return window.convertToScreen(button.convert(button.bounds, to: nil))
     }
-    private var menuBarAnchor: (rect: NSRect, screen: NSScreen)? {
-        guard let raw = statusScreenFrame, let screen = InboxGeometry.nearestScreen(to: raw) else { return nil }
-        return (InboxGeometry.visibleAnchor(raw, screen: screen.frame, topInset: screen.safeAreaInsets.top), screen)
+    private var presentationScreen: NSScreen? {
+        statusScreenFrame.flatMap { InboxGeometry.nearestScreen(to: $0) } ?? NSScreen.main
     }
     private func placePanelContent(at target: NSRect) {
         guard let panel else { return }
@@ -449,12 +424,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
             let directory = URL(fileURLWithPath: output)
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            guard let panel, let initial = contentScreenFrame, let screen = menuBarAnchor?.screen else {
+            guard let panel, let initial = contentScreenFrame, let screen = presentationScreen else {
                 throw NotifyError("internal_error", "No visible inbox panel.")
             }
             try require(inboxIsVisible && panel.contentViewController === controller, "Inbox lost its shared content.")
             try require(statusItem.button?.isHighlighted == true, "Native status selection is missing.")
-            try require(model.pointerX != nil, "Fresh unpinned opening lost its pointer.")
+            try require(initial == InboxGeometry.inboxFrame(size: inboxSize, on: screen.visibleFrame),
+                        "Fresh inbox opening is not centered at eye level.")
+            let arrival = arrivalFrame(ArrivalView.preferredSize)
+            try require(arrival?.midX == screen.visibleFrame.midX
+                        && arrival?.maxY == screen.visibleFrame.maxY - 13,
+                        "Arrival is not attached to the top center of the display.")
+            let otherDisplay = NSRect(x: -1440, y: -200, width: 1440, height: 900)
+            let otherArrival = InboxGeometry.arrivalFrame(size: ArrivalView.preferredSize, on: otherDisplay)
+            let otherInbox = InboxGeometry.inboxFrame(size: inboxSize, on: otherDisplay)
+            try require(otherArrival.midX == otherDisplay.midX && otherArrival.maxY == otherDisplay.maxY - 13
+                        && otherInbox.midX == otherDisplay.midX && otherDisplay.contains(otherInbox),
+                        "Centered surfaces escaped a display with negative coordinates.")
             try require(statusItem.length == NSStatusItem.variableLength, "Status item lost intrinsic sizing.")
             try require(screen.frame.contains(initial), "Inbox escaped the screen.")
             try require(initial.size == inboxSize, "Hosting content collapsed the initial inbox size.")
@@ -468,7 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
                 toggleDetached()
                 try require(!model.detached && contentScreenFrame == initial, "Unpin moved the inbox.")
             }
-            // The open window must not track menu-bar reveal/hide movements.
+            // The open window must not track menu-bar movement.
             guard let raw = statusScreenFrame else { throw NotifyError("internal_error", "Missing status anchor.") }
             for offset: CGFloat in [30, -30, 0] {
                 verificationAnchor = raw.offsetBy(dx: 0, dy: offset)
@@ -498,15 +484,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NotifyInterfaceControl
             // A queued opening highlight must not survive a close.
             show()
             closeSurface()
+            show()
+            let shortcutCount = model.inboxCount
+            completeAllShortcut.action?()
+            try require(shortcutCount > 0 && !inboxIsVisible && model.inboxCount == 0
+                        && model.undoCompletion?.items.count == shortcutCount,
+                        "Global Complete All did not finish immediately, close the inbox, and retain Undo.")
+            show()
+            try require(model.undoCompletion?.items.count == shortcutCount && panel.attachedSheet == nil,
+                        "Reopening after the shortcut lost Undo or showed a confirmation sheet.")
+            model.undo()
+            try require(model.inboxCount == shortcutCount, "Shortcut completion could not be undone after reopening.")
+            closeSurface()
             DispatchQueue.main.async {
                 do {
                     try require(self.statusItem.button?.isHighlighted == false, "Stale opening restored selection after closing.")
                     let result: [String: Any] = [
                         "ok": true,
-                        "checks": ["native status selection", "nonactivating panel", "four stationary pin/unpin cycles",
+                        "checks": ["native status selection", "centered arrival and eye-level inbox geometry", "nonactivating panel", "four stationary pin/unpin cycles",
                                    "pinned focus-loss and outside-click persistence", "stable open geometry",
                                    "drag and unpin preserve position", "outside-click dismissal", "key-loss dismissal",
-                                   "stale selection cannot outlive the inbox"],
+                                    "stale selection cannot outlive the inbox", "shortcut completes and closes with Undo on reopening"],
                         "dragChecks": dragChecks
                     ]
                     try JSON.data(result).write(to: directory.appendingPathComponent("native-panel-check.json"))

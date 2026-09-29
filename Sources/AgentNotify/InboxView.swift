@@ -36,7 +36,6 @@ struct InboxDragRegion: NSViewRepresentable {
             // the grab point. Quartz's screen Y axis runs opposite to AppKit's.
             let origin = NSPoint(x: start.origin.x + pointer.x - start.pointer.x, y: start.origin.y + start.pointer.y - pointer.y)
             guard origin != panel.frame.origin else { return }
-            panel.onDrag?()
             panel.setFrameOrigin(origin)
         }
         override func mouseUp(with event: NSEvent) { dragStart = nil }
@@ -48,17 +47,6 @@ struct InboxDragRegion: NSViewRepresentable {
         let view = DragView(); view.setAccessibilityElement(false); return view
     }
     func updateNSView(_ nsView: DragView, context: Context) {}
-}
-
-struct InboxPointer: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { path in
-            path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-            path.addLine(to: CGPoint(x: rect.midX, y: rect.minY))
-            path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            path.closeSubpath()
-        }
-    }
 }
 
 struct InboxView: View {
@@ -148,27 +136,9 @@ struct InboxView: View {
         .background { if model.presentedAsPanel { InboxDragRegion() } }
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: model.presentedAsPanel ? InboxPanel.cornerRadius : 0, style: .continuous))
-        // Reserve the pointer strip in both states: pinning hides the pointer
-        // without shifting the body, controls, or window.
-        .padding(.top, model.presentedAsPanel ? InboxPanel.pointerHeight : 0)
-        .overlay(alignment: .topLeading) {
-            if model.presentedAsPanel, !model.detached, let x = model.pointerX {
-                GeometryReader { geometry in
-                    InboxPointer().fill(Color(nsColor: .windowBackgroundColor))
-                        .frame(width: 24, height: InboxPanel.pointerHeight + 1)
-                        .offset(x: min(max(x, 32), geometry.size.width - 32) - 12)
-                }.allowsHitTesting(false).accessibilityHidden(true)
-            }
-        }
         .tint(.primary)
         .ignoresSafeArea(.container, edges: .top)
         .onExitCommand { if model.searchVisible { model.query = ""; model.searchVisible = false } else if model.selected != nil { model.selected = nil } else { model.onClose?() } }
-        .alert(completeAllTitle, isPresented: $model.confirmingCompleteAll) {
-            Button("Cancel", role: .cancel) {}
-            Button("Complete All", role: .destructive) { model.completeAll() }
-        } message: {
-            Text("This moves every active Inbox notification to Done and closes unanswered prompts. It does not run notification actions.")
-        }
     }
     private var controls: some View {
         HStack(alignment: .center, spacing: 6) {
@@ -214,9 +184,6 @@ struct InboxView: View {
                 Button("Quit AgentNotify") { model.onQuit?() }
             }.help("More Options").accessibilityLabel("More Options")
         }.padding(.leading, 20).padding(.trailing, 14).padding(.top, 18).padding(.bottom, 20)
-    }
-    private var completeAllTitle: String {
-        model.inboxCount == 1 ? "Complete 1 inbox notification?" : "Complete all \(model.inboxCount) inbox notifications?"
     }
     private var emptyState: some View {
         VStack(spacing: 10) {
