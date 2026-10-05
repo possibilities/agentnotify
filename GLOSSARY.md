@@ -1,4 +1,4 @@
-# AgentNotify context
+# AgentNotify glossary
 
 **Notification** — A durable item submitted to AgentNotify, with content, optional response choices, read state, and task status. It is not a mirror of other apps’ notifications. _Avoid_: toast, message, alert as the stored entity.
 
